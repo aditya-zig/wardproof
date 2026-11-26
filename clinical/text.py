@@ -222,7 +222,7 @@ _HINDI_SUBJECT_RE = re.compile(
 _HINDI_SUBJECT_STOPWORDS = frozenset({"मरीज", "रोगी", "पिता", "माता", "बच्चे"})
 
 _HINGLISH_HONORIFIC_RE = re.compile(
-    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2})[ \t]+(?:sahab|saheb|ji|didi|bhai)\b"
+    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2})[ \t]+(?:sahab|saheb|ji|didi|bhai|behenji|bahanji|chacha|chachi)\b"
 )
 _HINDI_HONORIFIC_RE = re.compile(
     r"(?:(?:श्री|श्रीमती|सुश्री|कुमारी)[ \t]+(?:(?!(?:को|ने|से|का|की|के)(?=\s|$))[\u0900-\u097F])+(?:[ \t]+(?:(?!(?:को|ने|से|का|की|के)(?=\s|$))[\u0900-\u097F])+){0,2}|[\u0900-\u097F]+[ \t]+(?:जी|साहब|दीदी))"
@@ -275,7 +275,7 @@ _ADDRESS_DEVA_RE = re.compile(
     r"((?:ग्राम|पता|मोहल्ला|तहसील)\s*[:\-]\s*)([^\n\r,;]+)"
 )
 _ADDRESS_LATIN_RE = re.compile(
-    r"(\b(?:H\.?\s*No\.?|House\s*No\.?|Mohalla|Gali|Village|Gram|Tehsil|Address)\s*[:\-]?\s*)([^\n\r,;]+)",
+    r"(\b(?:H\.?\s*No\.?|House\s*(?:No\.?)?|Makan\s*(?:No\.?)?|Mohalla|Gali|Village|Gram|Tehsil|Address)\s*[:\-]?\s*)([^\n\r,;]+)",
     re.IGNORECASE,
 )
 
@@ -502,6 +502,7 @@ def _handle_doctors(
     text: str,
     field: str,
     counts: Counter[str],
+    verified_clinicians: set[str] | None = None,
 ) -> str:
     """Preserve Dr. names only with trustworthy clinician role evidence."""
     field_lower = field.casefold()
@@ -512,6 +513,7 @@ def _handle_doctors(
         "relative_name",
         "relative",
     }
+    verified_set = {v.casefold() for v in (verified_clinicians or set())}
 
     def _replace_latin(match: re.Match[str]) -> str:
         prefix = text[max(0, match.start() - 60) : match.start()]
@@ -519,7 +521,11 @@ def _handle_doctors(
         if is_patient_or_rel_field or _NON_CLINICIAN_PREFIX_RE.search(prefix):
             counts["UNVERIFIED_DOCTOR"] += 1
             return "[REDACTED_UNVERIFIED_DR]"
-        if _CREDENTIAL_SUFFIX_RE.search(suffix) or _CLINICIAN_ROLE_PREFIX_RE.search(prefix):
+        if (
+            match.group(0).casefold() in verified_set
+            or _CREDENTIAL_SUFFIX_RE.search(suffix)
+            or _CLINICIAN_ROLE_PREFIX_RE.search(prefix)
+        ):
             return match.group(0)
         counts["UNVERIFIED_DOCTOR"] += 1
         return "[REDACTED_UNVERIFIED_DR]"
@@ -545,6 +551,9 @@ def _handle_doctors(
 # ---------------------------------------------------------------------------
 
 
+_DEVA_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
 def sanitize_text(
     text: str,
     *,
@@ -560,7 +569,7 @@ def sanitize_text(
         raise TypeError("text must be a str")
 
     ctx = context or {}
-    normalized = unicodedata.normalize("NFC", text)
+    normalized = unicodedata.normalize("NFC", text).translate(_DEVA_DIGITS)
     language = detect_language(normalized)
     counts: Counter[str] = Counter()
 
@@ -621,7 +630,8 @@ def sanitize_text(
             counts[cat] += n
 
     # 3. Clinician vs relative / unverified Dr.
-    work = _handle_doctors(work, field, counts)
+    verified_clins = set(str(x) for x in (ctx.get("clinician_names") or []) if str(x).strip())
+    work = _handle_doctors(work, field, counts, verified_clinicians=verified_clins)
 
     # 4. Labeled names, relatives, and addresses
     work, n = _PATIENT_LABEL_LATIN_RE.subn(r"\1[REDACTED_PATIENT]", work)
