@@ -288,6 +288,33 @@ class TestIdentifiersAndLoggingHygiene(unittest.TestCase):
         self.assertIn("Dr. Neeraj Mishra", cleaned["ref_doctor"])
         self.assertGreater(counts.get("PATIENT_NAME", 0), 0)
 
+    def test_initials_masked_aadhaar_insurance_phone_variants_and_determinism(self) -> None:
+        note = (
+            "R. K. Sharma presented with fever. Meera didi ka BP 120/80.\n"
+            "श्रीमती कमला देवी को खांसी है।\n"
+            "Masked Aadhaar: XXXX-XXXX-9628   Policy No: POL-998812\n"
+            "Alt Phone: 098765-43210   Tab Dolo 650 mg 1-0-1 x 5 days."
+        )
+        res1 = sanitize_text(note, field="clinical_note")
+        res2 = sanitize_text(note, field="clinical_note")
+        self.assertEqual(res1, res2)
+
+        for secret in (
+            "R. K. Sharma",
+            "Meera didi",
+            "कमला देवी",
+            "XXXX-XXXX-9628",
+            "POL-998812",
+            "098765-43210",
+        ):
+            self.assertNotIn(secret, res1.text)
+        self.assertIn("fever", res1.text)
+        self.assertIn("BP 120/80", res1.text)
+        self.assertIn("Tab Dolo 650 mg 1-0-1 x 5 days", res1.text)
+        self.assertGreater(res1.counts.get("AADHAAR_MASKED", 0), 0)
+        self.assertGreater(res1.counts.get("INSURANCE_ID", 0), 0)
+        self.assertGreater(res1.counts.get("PHONE", 0), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

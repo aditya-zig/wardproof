@@ -143,6 +143,7 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _PAN_RE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 _AADHAAR_SPACED_RE = re.compile(r"\b[2-9]\d{3}[\s-]\d{4}[\s-]\d{4}\b")
 _AADHAAR_COMPACT_RE = re.compile(r"\b[2-9]\d{11}\b")
+_AADHAAR_MASKED_RE = re.compile(r"\b[Xx*]{4}[\s-][Xx*]{4}[\s-]\d{4}\b")
 _AADHAAR_LABELED_RE = re.compile(
     r"((?:Aadhaar|Aadhar|UID|आधार)\s*[:\-]?\s*)(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}|[Xx*]{4}[\s-]?[Xx*]{4}[\s-]?\d{4})",
     re.IGNORECASE,
@@ -152,7 +153,13 @@ _PHONE_LABELED_RE = re.compile(
     r"((?:Mob(?:ile)?|Ph(?:one)?|Tel|Contact|मोबाइल|फोन)\s*[:\-]?\s*)(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b",
     re.IGNORECASE,
 )
-_PHONE_BARE_RE = re.compile(r"(?:\+91[\s-]?[6-9]\d{4}[\s-]?\d{5}|(?<!\d)[6-9]\d{9}(?!\d))")
+_PHONE_BARE_RE = re.compile(r"(?<!\d)(?:\+91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}(?!\d)")
+
+_INSURANCE_LABELED_RE = re.compile(
+    r"((?:Insurance\s*(?:ID|No\.?)|Policy\s*(?:ID|No\.?)|TPA\s*(?:ID|No\.?)|PMJAY\s*(?:ID|No\.?)|ESIC\s*(?:ID|No\.?))\s*[:\-]?\s*)"
+    r"([A-Za-z0-9][A-Za-z0-9/-]{3,24})",
+    re.IGNORECASE,
+)
 
 _MRN_LABELED_RE = re.compile(
     r"((?:Reg\.?\s*No\.?|UHID|MRN|IPD(?:\s*No\.?)?|OPD\s*No\.?|Sample\s*ID|Adm(?:ission)?\s*(?:No\.?|ID)|पंजीकरण(?:\s*संख्या)?)\s*[:\-]?\s*)"
@@ -215,7 +222,13 @@ _HINDI_SUBJECT_RE = re.compile(
 _HINDI_SUBJECT_STOPWORDS = frozenset({"मरीज", "रोगी", "पिता", "माता", "बच्चे"})
 
 _HINGLISH_HONORIFIC_RE = re.compile(
-    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2})[ \t]+(?:sahab|saheb|ji)\b"
+    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2})[ \t]+(?:sahab|saheb|ji|didi|bhai)\b"
+)
+_HINDI_HONORIFIC_RE = re.compile(
+    r"(?:(?:श्री|श्रीमती|सुश्री|कुमारी)[ \t]+(?:(?!(?:को|ने|से|का|की|के)(?=\s|$))[\u0900-\u097F])+(?:[ \t]+(?:(?!(?:को|ने|से|का|की|के)(?=\s|$))[\u0900-\u097F])+){0,2}|[\u0900-\u097F]+[ \t]+(?:जी|साहब|दीदी))"
+)
+_INITIAL_NAME_RE = re.compile(
+    r"(?<!\d[ \t])\b((?:[A-Z]\.[ \t]*){1,2}[A-Z][a-z]{1,20})\b"
 )
 
 _RELATIVE_RELATION_RE = re.compile(
@@ -381,6 +394,19 @@ _NON_NAME_TITLECASE_WORDS = frozenset(
         "jyoti",
         "sanjeevani",
         "arogya",
+        "masked",
+        "aadhaar",
+        "aadhar",
+        "abha",
+        "policy",
+        "insurance",
+        "alt",
+        "phone",
+        "mobile",
+        "mob",
+        "reg",
+        "no",
+        "dolo",
     }
 )
 
@@ -577,11 +603,13 @@ def sanitize_text(
         (_ABHA_ADDR_RE, "[REDACTED_ABHA_ADDR]", "ABHA_ADDRESS"),
         (_EMAIL_RE, "[REDACTED_EMAIL]", "EMAIL"),
         (_PAN_RE, "[REDACTED_PAN]", "PAN"),
+        (_AADHAAR_MASKED_RE, "[REDACTED_AADHAAR_MASKED]", "AADHAAR_MASKED"),
         (_AADHAAR_LABELED_RE, r"\1[REDACTED_AADHAAR]", "AADHAAR"),
         (_AADHAAR_SPACED_RE, "[REDACTED_AADHAAR]", "AADHAAR"),
         (_AADHAAR_COMPACT_RE, "[REDACTED_AADHAAR]", "AADHAAR"),
         (_PHONE_LABELED_RE, r"\1[REDACTED_PHONE]", "PHONE"),
         (_PHONE_BARE_RE, "[REDACTED_PHONE]", "PHONE"),
+        (_INSURANCE_LABELED_RE, r"\1[REDACTED_INSURANCE]", "INSURANCE_ID"),
         (_MRN_LABELED_RE, r"\1[REDACTED_ID]", "MRN"),
         (_MRN_PREFIXED_RE, "[REDACTED_ID]", "MRN"),
         (_DOB_LABELED_RE, r"\1[REDACTED_DOB]", "DOB"),
@@ -616,6 +644,23 @@ def sanitize_text(
     work, n = _HINGLISH_HONORIFIC_RE.subn("[REDACTED_PATIENT]", work)
     if n:
         counts["PATIENT_NAME"] += n
+
+    work, n = _HINDI_HONORIFIC_RE.subn("[REDACTED_PATIENT]", work)
+    if n:
+        counts["PATIENT_NAME"] += n
+
+    def _initial_name_repl(m: re.Match[str]) -> str:
+        prefix = work[max(0, m.start() - 6) : m.start()]
+        if re.search(r"\bDr\.?[ \t]+$", prefix):
+            return m.group(1)
+        phrase = m.group(1)
+        last_word = phrase.split()[-1].casefold()
+        if last_word in _NON_NAME_TITLECASE_WORDS:
+            return phrase
+        counts["PATIENT_NAME"] += 1
+        return "[REDACTED_NAME]"
+
+    work = _INITIAL_NAME_RE.sub(_initial_name_repl, work)
 
     work, n = _RELATIVE_RELATION_RE.subn(r"\1[REDACTED_RELATIVE]", work)
     if n:
