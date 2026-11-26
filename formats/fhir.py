@@ -83,6 +83,11 @@ def bundle(doc,index,source):
             if 'clinicalStatus' in r:
                 state=fixed(r['clinicalStatus']['coding'][0]['code'], ('active','recurrence','relapse','inactive','remission','resolved'))
                 s['clinicalStatus']={'coding':[{'system':'http://terminology.hl7.org/CodeSystem/condition-clinical','code':state}]}
+            if 'verificationStatus' in r:
+                coding, = r['verificationStatus']['coding']
+                state=fixed(coding['code'], ('unconfirmed','provisional','differential','confirmed','refuted','entered-in-error'))
+                s['verificationStatus']={'coding':[{'system':'http://terminology.hl7.org/CodeSystem/condition-ver-status','code':state}]}
+                if state=='entered-in-error': require('clinicalStatus' not in s)
             if 'encounter' in r:s['encounter']=ref(r['encounter'])
             if 'recordedDate' in r:s['recordedDate']=shifted(r['recordedDate'])
         elif t=='MedicationRequest':

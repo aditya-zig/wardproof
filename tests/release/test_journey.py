@@ -64,6 +64,22 @@ class Journey(unittest.TestCase):
         self.assertNotIn('synthetic-private-marker', str(outputs))
         self.assertIn('Metformin 500 mg BD x 7 days', str(outputs))
 
+    def test_context_is_not_released_as_a_positive_finding(self):
+        _, _, outputs = release({'notes/example.txt': 'NURSING NOTES\nNo C/O fever\nFamily history: Parkinson\'s disease\nAllergy: Amoxicillin 500 mg\nBP 115/82\nTab Ramipril 5 mg 1-0-0\n'})
+        text = next(iter(outputs.values()))
+        self.assertIn('BP 115/82', text)
+        self.assertIn('Ramipril 5 mg 1-0-0', text)
+        for context_bound in ('C/O fever', "Parkinson's disease", 'Amoxicillin'):
+            self.assertNotIn(context_bound, text)
+
+    def test_conflicting_note_name_abstains_even_with_known_id(self):
+        _, ledger, _ = release({
+            'registration/patients.csv': 'Name,UHID\nMeera Shah,JJH-91480\n',
+            'notes/conflict.txt': 'NURSING NOTES\nName: Anil Rao\nUHID: JJH-91480\nBP 115/82\n',
+        })
+        self.assertIsNotNone(next(row['patient'] for row in ledger if row['loc'] == 'row:0'))
+        self.assertIsNone(next(row['patient'] for row in ledger if row['loc'] == 'doc'))
+
     def test_hindi_discharge_and_forwarded_labs(self):
         report, ledger, outputs = release({
             'discharge/सविता.txt': 'Example Hospital\nडिस्चार्ज सारांश\nमरीज़ का नाम: सविता राव\nपंजीकरण सं.: JJH-91480\nभर्ती की तारीख: ०२-०३-२०३२\nछुट्टी की तारीख: ११-०३-२०३२\nनिदान: निमोनिया (J18.9);\nCap Doxycycline 100 mg 1-0-1 x 15 days\n',
@@ -83,14 +99,16 @@ class Journey(unittest.TestCase):
         def entry(ref, resource_type, **fields):
             return {'fullUrl':'urn:uuid:'+ref, 'resource':{'resourceType':resource_type, 'id':ref, **fields}}
         from uuid import UUID
-        a,b,c,d,e=[str(UUID(int=i)) for i in range(1,6)]
+        a,b,c,d,e,f,g=[str(UUID(int=i)) for i in range(1,8)]
         subject={'reference':'urn:uuid:'+b,'display':'FakePatient'}
         bundle={'resourceType':'Bundle','type':'document','entry':[
             entry(a,'Composition',status='final',subject=subject,author=[{'reference':'urn:uuid:'+c}],date='2030-01-10T09:15:00+05:30',section=[{'title':'Labs','entry':[{'reference':'urn:uuid:'+d},{'reference':'urn:uuid:'+e}]}]),
             entry(b,'Patient',identifier=[{'value':'JJH-12345'}]),entry(c,'Practitioner',name=[{'text':'FakeDoctor'}]),
             entry(d,'Observation',status='preliminary',subject=subject,code={'coding':[{'code':'718-7','display':'Haemoglobin'}]},valueQuantity={'value':10.1,'unit':'g/dL'}),
-            entry(e,'DocumentReference',subject=subject,content=[{'attachment':{'data':'RmFrZVBhdGllbnQ='}}]) ]}
-        _, ledger, outputs=release({'fhir/FakePatient.json':json.dumps(bundle)})
+            entry(e,'DocumentReference',subject=subject,content=[{'attachment':{'data':'RmFrZVBhdGllbnQ='}}]),
+            entry(f,'Condition',subject=subject,code={'coding':[{'code':'A97.9','display':'Dengue, unspecified'}]},verificationStatus={'coding':[{'code':'refuted','display':'FakePatient'}]}),
+            entry(g,'Encounter',subject=subject,status='finished',**{'class': {'code':'IMP'}},period={'start':'2030-01-10','end':'2030-01-19'}) ]}
+        report, ledger, outputs=release({'fhir/FakePatient.json':json.dumps(bundle)})
         self.assertEqual(len(outputs),1); result=json.loads(next(iter(outputs.values())))
         self.assertNotIn('FakePatient',str(outputs)); self.assertNotIn('RmFrZVBhdGllbnQ=',str(outputs));self.assertNotIn(b,str(outputs))
         urls={e['fullUrl'] for e in result['entry']}
@@ -101,6 +119,13 @@ class Journey(unittest.TestCase):
                 self.assertEqual(r['valueQuantity']['value'],10.1)
                 self.assertEqual(r['status'],'preliminary')
         self.assertEqual(result['entry'][1]['resource']['identifier'][0]['value'],ledger[0]['patient'])
+        condition = next(e['resource'] for e in result['entry'] if e['resource']['resourceType']=='Condition')
+        self.assertEqual(condition['verificationStatus']['coding'][0]['code'], 'refuted')
+        self.assertNotIn('display', condition['verificationStatus']['coding'][0])
+        period = next(e['resource']['period'] for e in result['entry'] if e['resource']['resourceType']=='Encounter')
+        self.assertEqual((date.fromisoformat(period['end'])-date.fromisoformat(period['start'])).days, 9)
+        self.assertEqual(report['risk_proxy']['fhir_stay_patients_evaluated'], 1)
+        self.assertEqual(report['risk_proxy']['fhir_patients_with_unique_stay_diagnosis'], 1)
 
 
 if __name__ == '__main__': unittest.main()

@@ -48,6 +48,33 @@ class LabRelease(unittest.TestCase):
         self.assertEqual(json.loads(payload['records.jsonl']),
                          {'file': entry['output'], 'loc': 'doc', 'patient': None})
 
+    def test_bulk_lab_keeps_each_measurement_and_record_location(self):
+        rows = [{'patient_name': 'नीला नमूना', 'uhid': 'JJH-91480', 'test': 'Haemoglobin',
+                 'loinc': '718-7', 'value': 10.1, 'unit': 'g/dL', 'date': '2032-01-04'},
+                {'patient_name': 'Private referral', 'uhid': 'ZZ-123456', 'test': 'TSH',
+                 'loinc': '3016-3', 'value': 2.4, 'unit': 'mIU/L', 'date': '2032-02-05'}]
+        data = {'export': 'LIMS bulk extract', 'results': rows}
+        report, payload = self.run_release({'results.json': json.dumps(data)})
+        item, = report['files']
+        self.assertEqual(item['status'], 'sanitized')
+        self.assertEqual(item['output'], 'sanitized/results.json')
+        released = json.loads(payload[item['output']])['results']
+        ledger = [json.loads(line) for line in payload['records.jsonl'].splitlines()]
+        self.assertEqual([row['loc'] for row in ledger], ['/results/0', '/results/1'])
+        self.assertNotIn('2032-01-04', str(payload))
+        self.assertTrue(ledger[0]['patient'])
+        self.assertEqual(released[0]['uhid'], ledger[0]['patient'])
+        self.assertIsNone(ledger[1]['patient'])
+        for original, cleaned in zip(rows, released, strict=True):
+            self.assertEqual(set(original), set(cleaned))
+            self.assertEqual(cleaned['patient_name'], '')
+            self.assertEqual({k: cleaned[k] for k in ('test', 'loinc', 'unit', 'value')},
+                             {k: original[k] for k in ('test', 'loinc', 'unit', 'value')})
+        rows[1]['unit'] = 'invalid'
+        invalid, artifacts = self.run_release({'results.json': json.dumps(data)})
+        self.assertEqual(invalid['counts']['files_quarantined'], 1)
+        self.assertFalse(artifacts['records.jsonl'])
+
     def test_quarantine_ambiguous_or_malformed_json_without_partial_release(self):
         valid = json.dumps(example())
         cases = [valid.replace('"remarks":', '"remarks": "hidden", "remarks":'),

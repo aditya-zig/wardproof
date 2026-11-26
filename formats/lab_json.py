@@ -46,7 +46,30 @@ def parse(data):
                       parse_constant=reject_constant, object_pairs_hook=unique_object)
 
 
+def measurement(result):
+    require(all(type(result[k]) is str for k in ('test', 'loinc', 'unit')))
+    require(result['test'].isascii() and (result['test'].lower(), result['loinc'], result['unit']) in ASSAYS)
+    require(type(result['value']) in (int, float) and abs(result['value']) <= 1_000_000)
+
+
+def bulk_lab(doc, index):
+    fields(doc, 'export results')
+    require(doc['export'] == 'LIMS bulk extract' and type(doc['results']) is list and doc['results'])
+    patients, detected = [], 0
+    for i, row in enumerate(doc['results']):
+        fields(row, 'patient_name uhid test loinc value unit date')
+        measurement(row)
+        require(all(type(row[k]) is str for k in ('patient_name', 'uhid', 'date')))
+        patient = index.lookup(row['uhid'], row['patient_name'])
+        patients.append((f'/results/{i}', patient))
+        detected += bool(row['patient_name']) + bool(row['uhid'])
+        row.update(patient_name='', uhid=patient or '', date=index.shift(row['date'], patient))
+    return json.dumps(doc, ensure_ascii=False, allow_nan=False), patients, detected
+
+
 def lab_json(doc, index):
+    if isinstance(doc, dict) and 'export' in doc:
+        return bulk_lab(doc, index)
     fields(doc, 'lab report_type patient referred_by collected panels remarks')
     require(doc['report_type'] == 'Diagnostic report')
     patient = doc['patient']
@@ -67,9 +90,8 @@ def lab_json(doc, index):
         require(type(panel['results']) is list and panel['results'])
         for result in panel['results']:
             fields(result, 'test loinc unit value range')
-            require(all(type(result[k]) is str for k in ('test', 'loinc', 'unit', 'range')))
-            require(result['test'].isascii() and (result['test'].lower(), result['loinc'], result['unit']) in ASSAYS)
-            require(type(result['value']) in (int, float) and abs(result['value']) <= 1_000_000)
+            measurement(result)
+            require(type(result['range']) is str)
             number = r'-?[0-9]{1,6}(?:\.[0-9]{1,4})?'
             require(re.fullmatch(f'{number} *[-–] *{number}', result['range']))
     return json.dumps(doc, ensure_ascii=False, allow_nan=False), [('doc', ref)], count

@@ -25,11 +25,13 @@ DOLO = re.compile(r'(?<!\w)Dolo (?:500|650) '+FREQ+r' x '+DURATION+r'(?!\w)', re
 CHAT_LAB = re.compile(r'(?:Haemoglobin [0-9]{1,3}(?:\.[0-9]{1,2})? g/dL|(?:Random Blood Sugar|Serum Creatinine) [0-9]{1,3}(?:\.[0-9]{1,2})? mg/dL|HbA1c [0-9]{1,3}(?:\.[0-9]{1,2})? %)')
 PRIVATE_LINE = re.compile(r'^\s*(?:Patient Name|Name|नाम|मरीज़ का नाम|Address|पता|Mobile|मोबाइल|Attendant|पति का नाम|पिता का नाम|DOB)\s*:', re.I)
 
+CONTEXT = re.compile(r'\b(?:no|not|denies|denied|negative for|without|allerg\w*|family history|rule[ -]out|hold|stop|discontinue\w*)\b|नहीं|इंकार|एलर्जी', re.I)
+
 
 def facts(text):
     spans=[]
     for line in text.splitlines():
-        if PRIVATE_LINE.match(line): continue
+        if PRIVATE_LINE.match(line) or CONTEXT.search(line): continue
         matches=[*MED.finditer(line), *FACT.finditer(line), *DIAG.finditer(line), *HINDI_DIAG.finditer(line)]
         spans.extend(m.group() for m in sorted(matches,key=lambda m:m.start()))
     return '\n'.join(spans)
@@ -39,7 +41,8 @@ def forwarded_lab(text):
     if not re.search(r'(?im)^Forwarded\s*\n\*[^\n]+\*\s*\nReport of [^\n]+', text): raise ValueError
     values=[field.strip() for line in text.splitlines() if '|' in line for field in line.split('|') if CHAT_LAB.fullmatch(field.strip())]
     if not values: raise ValueError
-    return '\n'.join([*values, *(m.group() for m in DOLO.finditer(text)), '']), [('doc',None)], 1
+    doses = [m.group() for line in text.splitlines() if not CONTEXT.search(line) and not re.match(r'^Report of\b', line, re.I) for m in DOLO.finditer(line)]
+    return '\n'.join([*values, *doses, '']), [('doc',None)], 1
 
 
 def capture(pattern,text):

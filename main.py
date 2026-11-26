@@ -125,14 +125,14 @@ def run(inp, out, secret):
                 else:
                     if category in {'opd', 'fhir'}:
                         risk.add(category, json.loads(text), patients)
-                    # Do not disclose unverified filenames or folder names in the release.
-                    # Preserve generic component names only, never unverifiable personal names.
+                    # Keep recognized neutral path components, pseudonymize the rest in place.
                     folders = {'registration','prescriptions','notes','discharge','opd','lab','fhir'}
-                    category = path.parent.name if path.parent.name in folders else category
+                    parts = path.relative_to(inp).parts
+                    parents = [part if part in folders else 'dir-' + token(secret, 'dir', *parts[:i+1])
+                               for i, part in enumerate(parts[:-1])]
                     stem = path.stem if re.fullmatch(r'(?:patients|visits|prescriptions|results|report|registration|sample)(?:_[0-9]{1,4})?', path.stem) else token(secret,'path',source)
-                    name = 'sanitized/' + category + '/' + stem + ext
-                    if (out / name).exists(): name = 'sanitized/' + category + '/' + token(secret,'path',source) + ext
-                    (out / name).parent.mkdir(exist_ok=True)
+                    name = '/'.join(('sanitized', *parents, stem + path.suffix))
+                    (out / name).parent.mkdir(parents=True, exist_ok=True)
                     (out / name).write_bytes(text.encode())
                     entry = {'input_sha256': digest, 'output': name, 'status': 'sanitized'}
                     for loc, patient in patients:

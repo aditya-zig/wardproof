@@ -64,6 +64,9 @@ class Index:
         if raw:
             key=uid(raw)
             if not key or key in self.conflicts: return None
+            candidate=phonetic(name)
+            known=self.evidence.get(key)
+            if candidate and known and all(candidate != registered for registered,_ in known): return None
             # Without a registry, accept only a recognized facility-specific namespace.
             return self.persons.get(key) or ('PSN-'+token(self.secret,'facility-id',key) if re.match(r'(JJH-|DHH[0-9]{4}-|SNJ/)',key) else None)
         candidates=self.names.get((phonetic(name),phonetic(village)),set())

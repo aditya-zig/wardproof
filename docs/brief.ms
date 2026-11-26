@@ -50,13 +50,13 @@ The same Hindi prescription and Latin registration can link without linking a na
 Measured privacy versus utility
 .PP
 .B "Official synthetic practice kit, revision 6c0a85a."
-174 of 200 files released; 26 quarantined. 605 ledger records, of which 572 have a pseudonym. On two logical CPUs with no network: about 0.13 seconds and 23 MiB peak RSS. The organizer contract validator passed; three repeat runs verified stability, key rotation, and no input changes.
+175 of 200 files released; 25 quarantined. 749 ledger records, of which 701 have a pseudonym. On two logical CPUs with no network: about 0.14 seconds and 23 MiB peak RSS. The organizer contract validator passed; three repeat runs verified stability, key rotation, and no input changes.
 .IP "Privacy" 15n
 No personal data flags in the practice checker (0/3,230 across English, Hindi and Hinglish). No planted canaries in output (0/4) and no raw copies of unsupported files. These probes do not cover every possible leak.
 .IP "Utility" 15n
-3,409/4,543 checked medical values kept (75.0%). The denominator does not include all quarantined medical values. Linkage precision 1.00, recall 0.56, F0.5 0.86 on the practice checker, not an official hidden score.
+3,541/4,687 checked medical values kept (75.5%). The denominator does not include all quarantined medical values. Linkage precision 1.00, recall 0.80, F0.5 0.95 on the practice checker, not an official hidden score.
 .IP "Residual risk" 15n
-We drop age and location and shift dates per patient, preserving intervals. In records with a diagnosis and shifted date in OPD/FHIR, 50/51 patients have at least one unique (shifted ISO week, diagnosis) pair. This limited proxy highlights potential singling-out; it is not an anonymity guarantee or the organizer's attack score.
+We drop age and location and shift dates per patient, preserving intervals. In records with a diagnosis and shifted date in OPD/FHIR, 50/51 patients have at least one unique (shifted ISO week, diagnosis) pair. For FHIR stays, 16/19 patients have a unique (calendar-day stay length, diagnosis) pair. These proxies highlight potential singling-out; neither is the organizer's attack score.
 .NH 1
 Security design
 .PP
