@@ -266,6 +266,124 @@ _ADDRESS_LATIN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Unlabeled Title-Case 2-3 word person names in free text (e.g. "Meera Shah presented with fever.")
+_UNLABELED_TITLECASE_NAME_RE = re.compile(
+    r"\b([A-Z][a-z]{1,20}(?:[ \t]+[A-Z][a-z]{1,20}){1,2})\b"
+)
+_NON_NAME_TITLECASE_WORDS = frozenset(
+    {
+        "tab",
+        "cap",
+        "inj",
+        "inh",
+        "syp",
+        "susp",
+        "drop",
+        "drops",
+        "gel",
+        "oint",
+        "cream",
+        "lotion",
+        "powder",
+        "ramipril",
+        "paracetamol",
+        "metformin",
+        "amlodipine",
+        "telmisartan",
+        "levothyroxine",
+        "salbutamol",
+        "pantoprazole",
+        "ceftriaxone",
+        "penicillin",
+        "sulfa",
+        "aspirin",
+        "atorvastatin",
+        "insulin",
+        "type",
+        "diabetes",
+        "mellitus",
+        "hypertension",
+        "asthma",
+        "tuberculosis",
+        "disease",
+        "syndrome",
+        "palsy",
+        "lymphoma",
+        "thyroiditis",
+        "fever",
+        "cough",
+        "pain",
+        "headache",
+        "chest",
+        "pulmonary",
+        "medicine",
+        "surgery",
+        "cardiology",
+        "orthopedics",
+        "pediatrics",
+        "nursing",
+        "notes",
+        "opd",
+        "ipd",
+        "prescription",
+        "diagnosis",
+        "history",
+        "family",
+        "advice",
+        "review",
+        "vitals",
+        "pulse",
+        "temp",
+        "blood",
+        "pressure",
+        "patient",
+        "attendant",
+        "father",
+        "mother",
+        "brother",
+        "sister",
+        "spouse",
+        "husband",
+        "wife",
+        "ward",
+        "bed",
+        "room",
+        "low",
+        "salt",
+        "diet",
+        "consulting",
+        "attending",
+        "treating",
+        "physician",
+        "doctor",
+        "consultant",
+        "signed",
+        "denies",
+        "allergic",
+        "negative",
+        "positive",
+        "normal",
+        "next",
+        "morning",
+        "evening",
+        "night",
+        "rule",
+        "out",
+        "known",
+        "case",
+        "hospital",
+        "clinic",
+        "charitable",
+        "multispeciality",
+        "seva",
+        "sadan",
+        "jeevan",
+        "jyoti",
+        "sanjeevani",
+        "arogya",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Assertion / meaning classification
@@ -292,7 +410,7 @@ _CLINICAL_CONTENT_RE = re.compile(
 def extract_clinical_assertions(text: str) -> tuple[ClinicalAssertion, ...]:
     """Extract clause-level clinical assertions without flipping negation/allergy/FH to positive."""
     assertions: list[ClinicalAssertion] = []
-    clauses = re.split(r"[\n\r.;।]+", text)
+    clauses = re.split(r"[,;\n\r.।]+|\b(?:but|however)\b", text, flags=re.IGNORECASE)
     for raw in clauses:
         clause = raw.strip()
         if not clause:
@@ -526,6 +644,19 @@ def sanitize_text(
     work, n = _ADDRESS_LATIN_RE.subn(r"\1[REDACTED_ADDRESS]", work)
     if n:
         counts["ADDRESS"] += n
+
+    def _unlabeled_name_repl(m: re.Match[str]) -> str:
+        prefix = work[max(0, m.start() - 6) : m.start()]
+        if re.search(r"\bDr\.?[ \t]+$", prefix):
+            return m.group(1)
+        phrase = m.group(1)
+        words = phrase.casefold().split()
+        if any(w in _NON_NAME_TITLECASE_WORDS for w in words):
+            return phrase
+        counts["PATIENT_NAME"] += 1
+        return "[REDACTED_NAME]"
+
+    work = _UNLABELED_TITLECASE_NAME_RE.sub(_unlabeled_name_repl, work)
 
     cleaned = _restore_spans(work, protected)
     assertions = extract_clinical_assertions(cleaned)

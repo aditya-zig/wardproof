@@ -98,6 +98,24 @@ class TestEnglishClinicalSanitization(unittest.TestCase):
         self.assertTrue(any("coronary artery disease" in t for t in fh_texts))
         self.assertFalse(any("chest pain" in t or "diabetes" in t or "penicillin" in t for t in positive_texts))
 
+    def test_negation_scoped_to_right_finding_comma_separated(self) -> None:
+        res = sanitize_text("No fever, cough present.", field="clinical_note")
+        self.assertIn("No fever", res.text)
+        self.assertIn("cough present", res.text)
+
+        positive_texts = [a.text.casefold() for a in res.assertions if a.polarity == "positive"]
+        negated_texts = [a.text.casefold() for a in res.assertions if a.polarity == "negated"]
+
+        self.assertTrue(any("fever" in t for t in negated_texts))
+        self.assertFalse(any("fever" in t for t in positive_texts))
+        self.assertTrue(any("cough" in t for t in positive_texts))
+
+    def test_unmatched_free_text_name_redacted_without_context(self) -> None:
+        res = sanitize_text("Meera Shah presented with fever.", field="clinical_note")
+        self.assertNotIn("Meera Shah", res.text)
+        self.assertIn("fever", res.text)
+        self.assertGreater(res.counts.get("PATIENT_NAME", 0), 0)
+
     def test_clinician_vs_relative_and_unverified_doctor(self) -> None:
         # Verified clinicians (credentials or trustworthy role label) are preserved
         verified = (
