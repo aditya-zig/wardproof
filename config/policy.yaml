@@ -1,0 +1,43 @@
+# WardProof Privacy & Utility Policy Configuration
+
+policy:
+  name: wardproof-track3
+  mode: offline-deterministic
+
+redaction:
+  direct_identifiers:
+    - PATIENT_NAME
+    - RELATIVE_NAME
+    - UNVERIFIED_DOCTOR
+    - PHONE
+    - EMAIL
+    - AADHAAR
+    - AADHAAR_MASKED
+    - ABHA_NUMBER
+    - ABHA_ADDRESS
+    - PAN
+    - MRN
+    - INSURANCE_ID
+    - ADDRESS
+    - DOB
+    - PRIVATE_MARKER
+  clinician_retention: fail_closed_role_verified
+  log_raw_matches: false
+
+generalization:
+  age_band_years: 5
+  age_top_code: 85+
+  pin_prefix_digits: 3
+  location_level: district_state
+  date_shift_range_days: [15, 90]
+  preserve_length_of_stay: true
+
+linkage:
+  strategy: precision_first_corroborated
+  abstain_on_ambiguous_homonyms: true
+  pseudonym_algorithm: hmac-sha256
+
+quarantine:
+  max_file_bytes: 8000000
+  max_json_depth: 64
+  copy_raw_on_failure: false
