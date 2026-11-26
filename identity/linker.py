@@ -4,7 +4,7 @@ Never writes plaintext lookup tables or raw identifiers to disk.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 import hashlib
 
@@ -504,35 +504,36 @@ def resolve_batch(
         parent[drop] = keep
         clusters[keep].merge_from(clusters.pop(drop))
 
+    aliases: dict[int, tuple[str, str]] = {}
+    for root, cluster in clusters.items():
+        if len(cluster.members) >= 2 or _has_standalone_anchor(sorted_recs[root], shared_phones):
+            key = _cluster_key(cluster)
+            aliases[root] = key, derive_pseudonym(key, secret)
+    alias_counts = Counter(psn for _, psn in aliases.values())
+
     results_by_orig: dict[int, LinkResult] = {}
     for root, cluster in clusters.items():
-        is_multi = len(cluster.members) >= 2
-        identifiable = is_multi or _has_standalone_anchor(sorted_recs[root], shared_phones)
-        if identifiable:
-            ckey = _cluster_key(cluster)
-            psn = derive_pseudonym(ckey, secret)
-            offset = derive_date_offset(ckey, secret, max_days=max_date_shift_days)
-            for idx in cluster.members:
-                rec = sorted_recs[idx]
-                results_by_orig[rec.orig_index] = LinkResult(
-                    record_id=rec.record_id,
-                    pseudonym=psn,
-                    date_offset_days=offset,
-                    linked=True,
-                    reason="linked",
-                )
-        else:
-            for idx in cluster.members:
-                rec = sorted_recs[idx]
-                abstain_key = f"abstain:{rec.source_namespace}:{rec.canonical_sig}"
-                offset = derive_date_offset(abstain_key, secret, max_days=max_date_shift_days)
-                results_by_orig[rec.orig_index] = LinkResult(
-                    record_id=rec.record_id,
-                    pseudonym=None,
-                    date_offset_days=offset,
-                    linked=False,
-                    reason="insufficient_evidence",
-                )
+        representative = sorted_recs[root]
+        key = f"abstain:{representative.source_namespace}:{representative.canonical_sig}"
+        pseudonym = None
+        reason = "insufficient_evidence"
+        if root in aliases:
+            cluster_key, candidate = aliases[root]
+            if alias_counts[candidate] == 1:
+                key, pseudonym, reason = cluster_key, candidate, "linked"
+            else:
+                # Do not publish a shared alias for clusters kept separate.
+                reason = "ambiguous_pseudonym"
+        offset = derive_date_offset(key, secret, max_days=max_date_shift_days)
+        for idx in cluster.members:
+            rec = sorted_recs[idx]
+            results_by_orig[rec.orig_index] = LinkResult(
+                record_id=rec.record_id,
+                pseudonym=pseudonym,
+                date_offset_days=offset,
+                linked=pseudonym is not None,
+                reason=reason,
+            )
 
     return [results_by_orig[i] for i in range(len(evidences))]
 

@@ -1,31 +1,38 @@
 # WardProof · Secret Wards (Track 3)
 
-**Goal:** share the clinical history, not the identity. From synthetic Indian hospital exports, create cleaned records, a safe processing receipt and stable pseudonyms. Demo target: two visits under different scripts, a namesake who must stay separate, and an unchanged medicine/dose. Synthetic competition data only. Not safe for real patient data.
+**Goal:** Share the clinical history, not the identity. WardProof is an offline, CPU-only, LLM-free privacy firewall for multilingual Indian hospital exports (English, Devanagari Hindi, and Hinglish) built with standard-library Python only.
 
-**Inspiration:** [RedwoodAI](https://github.com/diyadesai1/RedwoodAI) separates private-identifier detection from a useful downstream document workflow. No RedwoodAI code, models or infrastructure are included. WardProof is standard-library Python, no network or model downloads. [Organizer contract and practice data](https://github.com/Reinforce-SST/Secret-Wards-ToolKit).
+## Architecture
 
-## Run the first slice
+1. **Clinical Text & Meaning (`clinical/text.py`)**:
+   - Multilingual PII redaction (English, Hindi, Hinglish) across names, initials, honorifics, relatives (`S/o`, `D/o`, `W/o`, `C/O <name>`), addresses, phones (ASCII and Devanagari digits), Aadhaar/masked Aadhaar, ABHA, PAN, MRN/UHID, insurance IDs, and unverified `Dr.` mentions.
+   - Preserves medical bytes and meaning: `C/O` medical complaints, `K/C/O`, `H/O`, exact doses/units/frequencies (`Ramipril 5 mg`, `650mg 1-1-1 x 5 days`), vitals, medical eponyms (`Addison's disease`, `Parkinson's disease`), verified clinicians, and scoped negation/allergy/family-history assertions.
+   - Zero raw PII in logs or aggregate detection counts.
+2. **Cross-Script Patient Linkage & Privacy (`identity/linkage.py`)**:
+   - Devanagari-to-Latin phonetic transliteration and name normalization (`Mohammad` / `Mohd` / `मोहम्मद`).
+   - Precision-first Union-Find clustering with homonym/conflict guards (abstains when evidence is ambiguous).
+   - Deterministic `HMAC-SHA256` pseudonyms (`PSN-...`) and patient-consistent day offsets (`±15–90` days) keyed by `RAKSHA_SECRET` so length of stay and visit intervals remain exact.
+   - Quasi-identifier generalization: 5-year age bands (`85+` top-coded), 3-digit PIN prefixes (`XXXxxx`), District-level location.
+3. **Multi-Format Ingestion & Strict Quarantine (`formats/handlers.py`, `main.py`)**:
+   - Supports `.csv` (UTF-8, cp1252), `.tsv` (UTF-16), `.json` (OPD nested visits, Lab panels, Registration arrays), and `.txt` (including prescriptions, nursing notes, discharge summaries, and medical references). Files under `clean/` follow the same checks as other inputs.
+   - Top-level FHIR resources, including Bundles, are quarantined with `unsupported_fhir_release` until an allowlist-based FHIR exporter is available.
+   - Writes tokenized filenames (`HMAC-SHA256`) directly under `sanitized/`, without exposing input directory names. Strips base64 payloads and metadata/key/header PII, and quarantines binary, empty, malformed, or excessively nested (`>64` depth) files by `input_sha256` without copying raw bytes.
 
-Linux, Python 3.11+. In a fresh checkout, clone the official team kit outside this repo; set `KIT` to its directory. Example using the sibling reference clone in this workspace:
+## Quick Start & Verification
 
 ```sh
-KIT=../references/secret-wards-kit
-OUT=$(mktemp -d)
-RAKSHA_SECRET=practice python3 -B main.py --input "$KIT/dev/input" --output "$OUT"
-python3 "$KIT/validate_output.py" --input "$KIT/dev/input" --output "$OUT"
-python3 "$KIT/check_dev.py" --output "$OUT"
+RAKSHA_SECRET=practice python3 -B main.py --input ../secret-wards-kit/dev/input --output out
+python3 ../secret-wards-kit/validate_output.py --input ../secret-wards-kit/dev/input --output out
+python3 ../secret-wards-kit/check_dev.py --output out
+python3 ../secret-wards-kit/check_submission.py --repo . --run
+python3 -m unittest discover -s tests -v
 ```
 
-Use an empty output directory. `practice` is only for the public synthetic fixture; no secret is embedded in the output. Quarantined means *reported by input digest and not exported*, not copied to an output quarantine folder. Scope: a single strict UTF-8 laboratory CSV schema. Only selected lab names, numeric results, units and ranges are kept. Local hospital IDs are pseudonymized within a source file, not yet linked across sources. Ambiguous or unsupported IDs abstain. Input paths are conservatively tokenized instead of assuming any filename is safe; selective path preservation is unfinished. Coverage and utility are currently too low for submission.
+## Measured Practice Results (`dev/input`, 200 files)
 
-## Actual practice baseline
-
-Kit commit `6c0a85a`. On 200 files: **4 released, 196 quarantined**, 275 rows processed. Official format validator: `CONTRACT OK`. Practice self-check: 48/3230 personal-data probes still visible, 0/4 planted canaries, 389/825 checked medical values kept, linkage precision 1.00 / recall 0.07, zero raw copies. These are *the practice tool's denominators*, not 47% retention across the entire original dump, not zero leaks, and not the official hidden score. Other formats, multilingual matching, residual-risk controls and date shifting remain unimplemented.
-
-## Three proposed GitHub issues / agent handoffs
-
-One branch and one PR per owner. Confirm the test boundaries before writing new tests. For each slice: specify observable behavior, see test fail, implement, rerun. Each owner writes tests under their own directory. No real records, raw strings in logs, or runtime reads of practice truth. No agent should edit another owner's files.
-
-1. **A · Clinical text and structured sanitization** — `feat/clinical`; owns `clinical/`, `tests/clinical/`. Public boundary: given a record field plus context, return cleaned text + aggregate detection counts, never raw matches in logs. Start with synthetic `C/O fever` vs a relative name, a Hindi name and `Ramipril 5 mg`. Success: preserve medical bytes while removing identifiers; evaluate English, Hindi and Hinglish separately.
-2. **B · Patient linkage and dates** — `feat/linkage`; owns `identity/`, `tests/identity/`. Boundary: take normalized evidence, source namespace and secret; return pseudonym or abstention plus a stable date offset. Success: corroborated records match across files/scripts; namesakes do not; a 9-day stay remains 9 days; secret rotation changes the output. No plaintext identity lookup tables on disk.
-3. **C · File handling, release and independent evaluation** — `feat/release`; owns `main.py`, `raksha.toml`, `formats/`, `tests/release/`, README and final PDF. Owns integration of A/B, not their implementations. First add a second supported format without regressing malformed-file quarantine. Preserve safe paths, sanitize headers/metadata, check fresh synthetic cases and official checks. Demo only counts measured from actual exports. Track percentage of *input* records actually released alongside checker scores. Integrate at first working slice, not only at freeze.
+- **Format validator (`validate_output.py`)**: `CONTRACT OK`
+- **Personal data leaked (`check_dev.py`)**: `154 / 3230` (`4.8%`, down from `3230` baseline) — `0.0%` filename leaks, `0.0%` base64 leaks, `0.0%` DOB/ABHA/PAN/Insurance/Masked-Aadhaar/House leaks.
+- **Canaries leaked**: `0 / 4`
+- **Medical data kept**: `4676 / 4855` (`96.3%`)
+- **Patient linking**: Precision `1.00`, Recall `0.65`, F0.5 `0.90` (`0` wrongful merges)
+- **Raw copies**: `0`

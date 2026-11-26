@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from identity import (
     Evidence,
@@ -231,6 +232,20 @@ class TestLinkageAndDates(unittest.TestCase):
         psns = [by_id[k].pseudonym for k in keys]
         self.assertTrue(all(p is not None for p in psns))
         self.assertEqual(len(set(psns)), len(keys))
+
+    def test_duplicate_generated_aliases_are_not_published(self) -> None:
+        records = [
+            Evidence(record_id="a", source_namespace="hospital_a", local_ids=["L-1001"]),
+            Evidence(record_id="b", source_namespace="hospital_b", local_ids=["L-1002"]),
+        ]
+        self.assertTrue(all(result.linked for result in resolve_batch(records, SECRET_A)))
+
+        with patch("identity.linker.derive_pseudonym", return_value="PSN-fixed"):
+            results = resolve_batch(records, SECRET_A)
+        for result in results:
+            self.assertIsNone(result.pseudonym)
+            self.assertFalse(result.linked)
+            self.assertEqual(result.reason, "ambiguous_pseudonym")
 
     def test_distinct_namesakes_never_merge(self) -> None:
         records = [
