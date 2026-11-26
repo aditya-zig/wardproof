@@ -450,9 +450,16 @@ def _sanitize_json_value(
 def sanitize_document(
     doc: ParsedDocument,
     linkage: PatientLinkageIndex,
-) -> tuple[str, list[tuple[str, str | None]], dict[str, int]]:
+) -> tuple[str, list[tuple[str, str | None]], dict[str, Any]]:
     """Sanitize a ParsedDocument using cross-file linkage, returning (utf8_text, links, counts)."""
-    counts = {"identifiers_detected": 0, "records_processed": 0, "records_linked": 0, "records_generalized": 0}
+    entity_counts: dict[str, int] = {}
+    counts: dict[str, Any] = {
+        "identifiers_detected": 0,
+        "records_processed": 0,
+        "records_linked": 0,
+        "records_generalized": 0,
+        "entities": entity_counts,
+    }
     links: list[tuple[str, str | None]] = []
 
     if doc.kind == "clean":
@@ -462,24 +469,28 @@ def sanitize_document(
         header, rows = doc.payload
         delim = "\t" if doc.kind == "tsv" else ","
         out = io.StringIO(newline="")
-        writer = csv.DictWriter(out, fieldnames=header, delimiter=delim)
+        clean_header = [_sanitize_key_name(h, counts) for h in header]
+        writer = csv.DictWriter(out, fieldnames=clean_header, delimiter=delim)
         writer.writeheader()
         for idx, row in enumerate(rows):
             rec_id = f"{doc.source}#row:{idx}"
             psn = linkage.pseudonym(rec_id)
             offset = linkage.date_offset(rec_id)
             clean_row: dict[str, str] = {}
-            for k, v in row.items():
-                kl = _norm_key(k)
+            for orig_k, k in zip(header, clean_header):
+                v = row.get(orig_k)
+                kl = _norm_key(orig_k)
                 val = (v or "").strip()
                 if not val:
                     clean_row[k] = ""
                 elif kl in _ID_REF_KEYS:
                     clean_row[k] = psn or "[REDACTED_ID]"
                     counts["identifiers_detected"] += 1
+                    entity_counts["MRN"] = entity_counts.get("MRN", 0) + 1
                 elif kl in _PII_KEYS:
                     clean_row[k] = "[REDACTED]"
                     counts["identifiers_detected"] += 1
+                    entity_counts["PII_FIELD"] = entity_counts.get("PII_FIELD", 0) + 1
                 elif kl in _AGE_KEYS:
                     clean_row[k] = generalize_age(val)
                     counts["records_generalized"] += 1
@@ -498,8 +509,10 @@ def sanitize_document(
                 elif kl == "ref_doctor":
                     clean_row[k] = val if re.match(r"^Dr\.?\s+", val, re.I) else "[REDACTED]"
                 else:
-                    res = sanitize_text(val, field=k)
+                    res = sanitize_text(val, field=orig_k)
                     counts["identifiers_detected"] += sum(res.counts.values())
+                    for ek, ev_n in res.counts.items():
+                        entity_counts[ek] = entity_counts.get(ek, 0) + ev_n
                     clean_row[k] = res.text
             writer.writerow(clean_row)
             links.append((f"row:{idx}", psn))
@@ -672,6 +685,8 @@ def sanitize_document(
     ctx["patient_names"] = merged_names
     res = sanitize_text(text, field="clinical_note", context=ctx)
     counts["identifiers_detected"] += sum(res.counts.values())
+    for ek, ev_n in res.counts.items():
+        entity_counts[ek] = entity_counts.get(ek, 0) + ev_n
     links.append(("doc", psn))
     counts["records_processed"] += 1
     if psn is not None:
