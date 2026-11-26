@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+.env
+.env.*
+.local/
+.gstack/
+.pi/
+out/
+output/
+my_output/
+quarantine/
