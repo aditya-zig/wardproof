@@ -28,6 +28,8 @@ def uid(raw):
 
 
 def parse_date(raw, us=False):
+    if not isinstance(raw, str): return None
+    raw = ''.join(str(unicodedata.decimal(c)) if c.isdecimal() else c for c in raw.strip())
     for fmt in ('%Y-%m-%d','%m/%d/%Y' if us else '%d/%m/%Y','%d-%m-%Y','%d.%m.%Y'):
         try: return datetime.strptime(raw,fmt).date()
         except (ValueError,TypeError): pass

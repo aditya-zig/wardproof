@@ -64,6 +64,21 @@ class Journey(unittest.TestCase):
         self.assertNotIn('synthetic-private-marker', str(outputs))
         self.assertIn('Metformin 500 mg BD x 7 days', str(outputs))
 
+    def test_hindi_discharge_and_forwarded_labs(self):
+        report, ledger, outputs = release({
+            'discharge/सविता.txt': 'Example Hospital\nडिस्चार्ज सारांश\nमरीज़ का नाम: सविता राव\nपंजीकरण सं.: JJH-91480\nभर्ती की तारीख: ०२-०३-२०३२\nछुट्टी की तारीख: ११-०३-२०३२\nनिदान: निमोनिया (J18.9);\nCap Doxycycline 100 mg 1-0-1 x 15 days\n',
+            'lab/chat.txt': 'Forwarded\n*Example Lab*\nReport of Fake Person\nHbA1c 7.5 % | Serum Creatinine 1.9 mg/dL |\nDolo 650 BD x 5 days lena hai\nCall 9999988888\n',
+        })
+        self.assertEqual(report['counts']['files_sanitized'], 2)
+        notes = '\n'.join(outputs.values())
+        for value in ('निमोनिया (J18.9)', 'Doxycycline 100 mg 1-0-1 x 15 days', 'HbA1c 7.5 %', 'Serum Creatinine 1.9 mg/dL', 'Dolo 650 BD x 5 days'):
+            self.assertIn(value, notes)
+        for private in ('सविता', 'JJH-91480', 'Fake Person', '9999988888'):
+            self.assertNotIn(private, notes + str(outputs))
+        days = [date.fromisoformat(s.split(': ')[1]) for s in notes.splitlines() if s.startswith('Date of ')]
+        self.assertEqual((days[1] - days[0]).days, 9)
+        self.assertEqual(sum(row['patient'] is None for row in ledger), 1)
+
     def test_fhir_attachment_removed_and_references_resolve(self):
         def entry(ref, resource_type, **fields):
             return {'fullUrl':'urn:uuid:'+ref, 'resource':{'resourceType':resource_type, 'id':ref, **fields}}
