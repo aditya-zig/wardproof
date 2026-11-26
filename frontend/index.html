@@ -3,169 +3,436 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WardProof · Secret Wards Privacy Firewall</title>
+  <title>WardProof</title>
   <style>
     :root {
-      --bg: #0b1020;
-      --card: #121a30;
-      --border: #243052;
-      --text: #e6ecff;
-      --muted: #93a3c8;
-      --accent: #4f8cff;
-      --ok: #2ecc71;
-      --warn: #f39c12;
-      --danger: #e74c3c;
-      --info: #9b59b6;
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --surface-sub: #fbfbfd;
+      --hairline: rgba(0, 0, 0, 0.08);
+      --hairline-strong: rgba(0, 0, 0, 0.14);
+      --text: #1d1d1f;
+      --text-2: #6e6e73;
+      --text-3: #86868b;
+      --blue: #0071e3;
+      --blue-hover: #0077ed;
+      --green: #1e8e3e;
+      --green-bg: rgba(30, 142, 62, 0.09);
+      --red: #d93025;
+      --red-bg: rgba(217, 48, 37, 0.09);
+      --amber: #b06000;
+      --amber-bg: rgba(242, 153, 0, 0.11);
+      --purple: #7b3fe4;
+      --purple-bg: rgba(123, 63, 228, 0.09);
+      --seg-bg: rgba(118, 118, 128, 0.12);
+      --seg-active: #ffffff;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+      --mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --surface: #1c1c1e;
+        --surface-sub: #141416;
+        --hairline: rgba(255, 255, 255, 0.1);
+        --hairline-strong: rgba(255, 255, 255, 0.16);
+        --text: #f5f5f7;
+        --text-2: #98989d;
+        --text-3: #6e6e73;
+        --blue: #0a84ff;
+        --blue-hover: #409cff;
+        --green: #30d158;
+        --green-bg: rgba(48, 209, 88, 0.14);
+        --red: #ff453a;
+        --red-bg: rgba(255, 69, 58, 0.14);
+        --amber: #ffd60a;
+        --amber-bg: rgba(255, 214, 10, 0.14);
+        --purple: #bf5af2;
+        --purple-bg: rgba(191, 90, 242, 0.14);
+        --seg-bg: rgba(118, 118, 128, 0.24);
+        --seg-active: #2c2c2e;
+        --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+      }
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.47;
     }
+
+    /* macOS-style translucent toolbar */
     header {
-      padding: 18px 28px;
-      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(245, 245, 247, 0.8);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--hairline);
+    }
+    @media (prefers-color-scheme: dark) {
+      header { background: rgba(28, 28, 30, 0.78); }
+    }
+    .bar {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+    }
+    @media (max-width: 720px) {
+      .bar { grid-template-columns: 1fr; justify-items: start; }
+    }
+    .title-group { display: flex; align-items: baseline; gap: 10px; }
+    .title { font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
+    .subtitle { font-size: 12px; color: var(--text-2); }
+
+    /* Apple Segmented Control */
+    .segmented {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 9px;
+      background: var(--seg-bg);
+    }
+    .segmented button {
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      font-family: var(--font);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 5px 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+    }
+    .segmented button.active {
+      background: var(--seg-active);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .status {
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    /* Main workspace */
+    main {
+      max-width: 1040px;
+      margin: 28px auto 56px;
+      padding: 0 24px;
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .view-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: #0e1528;
-    }
-    header h1 { margin: 0; font-size: 20px; letter-spacing: 0.3px; }
-    header .badge {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(46, 204, 113, 0.15);
-      color: var(--ok);
-      border: 1px solid rgba(46, 204, 113, 0.35);
-    }
-    main { max-width: 1180px; margin: 24px auto; padding: 0 20px; display: grid; gap: 20px; }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      flex-wrap: wrap;
       gap: 12px;
+      margin-bottom: 16px;
     }
-    .metric {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px 16px;
+    .view-head h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.025em;
     }
-    .metric .label { font-size: 12px; color: var(--muted); text-transform: uppercase; }
-    .metric .val { font-size: 22px; font-weight: 700; margin-top: 4px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
+    .view-head p {
+      margin: 2px 0 0;
+      font-size: 13.5px;
+      color: var(--text-2);
     }
-    .card h2 { margin: 0 0 12px; font-size: 16px; }
-    .presets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-    button {
-      background: #1b2747;
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 8px 14px;
-      border-radius: 8px;
-      cursor: pointer;
+
+    /* Apple Pill Button */
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 7px 18px;
+      font-family: var(--font);
       font-size: 13px;
       font-weight: 500;
+      cursor: pointer;
+      transition: background 140ms ease, transform 120ms ease;
     }
-    button:hover { border-color: var(--accent); }
-    button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-      font-weight: 600;
+    .btn-primary:hover { background: var(--blue-hover); }
+    .btn-primary:active { transform: scale(0.98); }
+
+    /* Card / Split View */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
-    textarea, pre, input[type="text"] {
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+
+    .pane + .pane {
+      border-left: 1px solid var(--hairline);
+      background: var(--surface-sub);
+    }
+    @media (max-width: 760px) {
+      .pane + .pane { border-left: none; border-top: 1px solid var(--hairline); }
+    }
+    .pane-head {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--hairline);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-2);
+    }
+    textarea, pre {
       width: 100%;
-      background: #0a0f1d;
+      margin: 0;
+      padding: 16px;
+      border: none;
+      background: transparent;
       color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.65;
+      outline: none;
+      min-height: 240px;
+    }
+    textarea { resize: vertical; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+
+    /* Inspector Footer */
+    .inspector {
+      border-top: 1px solid var(--hairline);
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+      background: var(--surface);
+    }
+    .insp-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .insp-label {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-2);
+      min-width: 118px;
+    }
+    .chip {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--hairline);
+    }
+    .chip.positive { background: var(--green-bg); color: var(--green); border-color: transparent; }
+    .chip.negated { background: var(--red-bg); color: var(--red); border-color: transparent; }
+    .chip.allergy { background: var(--amber-bg); color: var(--amber); border-color: transparent; }
+    .chip.family_history { background: var(--purple-bg); color: var(--purple); border-color: transparent; }
+
+    /* Batch Form (Apple Settings-style grouped rows) */
+    .form-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--hairline);
+      flex-wrap: wrap;
+    }
+    .form-row label {
       font-size: 13px;
+      font-weight: 500;
+      min-width: 120px;
+      color: var(--text-2);
     }
-    textarea { min-height: 190px; resize: vertical; }
-    pre { min-height: 190px; margin: 0; white-space: pre-wrap; word-break: break-word; }
-    .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .pill {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: #0e1528;
+    .form-row input {
+      flex: 1;
+      min-width: 200px;
+      padding: 7px 11px;
+      border-radius: 8px;
+      border: 1px solid var(--hairline-strong);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12.5px;
+      outline: none;
     }
-    .pill.positive { border-color: rgba(46, 204, 113, 0.5); color: var(--ok); }
-    .pill.negated { border-color: rgba(231, 76, 60, 0.5); color: #ff8073; }
-    .pill.allergy { border-color: rgba(243, 156, 18, 0.5); color: #f8b74d; }
-    .pill.family_history { border-color: rgba(155, 89, 182, 0.5); color: #cfa2e8; }
-    .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
-    .muted { color: var(--muted); font-size: 13px; }
+    .form-row input:focus { border-color: var(--blue); }
+
+    /* Evaluation Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+    }
+    .metric-tile {
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+    }
+    .metric-k { font-size: 12px; color: var(--text-2); }
+    .metric-v { font-size: 28px; font-weight: 600; letter-spacing: -0.025em; margin: 6px 0 4px; }
+    .metric-d { font-size: 12px; color: var(--text-3); }
   </style>
 </head>
 <body>
+
   <header>
-    <div>
-      <h1>WardProof · Secret Wards Privacy Firewall</h1>
-      <div class="muted">Offline · CPU-only · Standard-Library Python · English / Hindi / Hinglish</div>
+    <div class="bar">
+      <div class="title-group">
+        <span class="title">WardProof</span>
+        <span class="subtitle">Offline Research Firewall</span>
+      </div>
+
+      <div class="segmented" role="tablist" aria-label="Workspace">
+        <button class="active" onclick="switchView('sanitize', this)">Sanitize Note</button>
+        <button onclick="switchView('batch', this)">Batch Dataset</button>
+        <button onclick="switchView('eval', this)">Evaluation</button>
+      </div>
+
+      <div class="status">
+        <span class="dot"></span>
+        <span>CONTRACT OK</span>
+      </div>
     </div>
-    <span class="badge">Track 3 · CONTRACT OK</span>
   </header>
 
   <main>
-    <section class="metrics">
-      <div class="metric"><div class="label">Personal Data Leaked</div><div class="val" style="color:var(--ok)">4.8%</div></div>
-      <div class="metric"><div class="label">Medical Data Kept</div><div class="val" style="color:var(--ok)">96.3%</div></div>
-      <div class="metric"><div class="label">Linkage Precision / F0.5</div><div class="val">1.00 / 0.90</div></div>
-      <div class="metric"><div class="label">Canary Leaks</div><div class="val" style="color:var(--ok)">0 / 4</div></div>
-      <div class="metric"><div class="label">Raw Copies</div><div class="val" style="color:var(--ok)">0</div></div>
-    </section>
-
-    <section class="card">
-      <h2>1. Live Clinical Text Sanitizer (<code>clinical.text.sanitize_text</code>)</h2>
-      <div class="presets">
-        <button onclick="loadPreset('english')">Load English Note</button>
-        <button onclick="loadPreset('hindi')">Load Hindi Rx</button>
-        <button onclick="loadPreset('hinglish')">Load Hinglish Nursing</button>
-        <button class="primary" onclick="runSanitize()">Sanitize Text</button>
-      </div>
-      <div class="split">
+    <!-- View 1: Sanitize Note -->
+    <section id="view-sanitize" class="view active">
+      <div class="view-head">
         <div>
-          <div class="muted" style="margin-bottom:6px">Input Clinical Text (synthetic)</div>
-          <textarea id="inputText"></textarea>
+          <h1>Clinical Text Sanitizer</h1>
+          <p>Remove direct identifiers while preserving doses, eponyms, and scoped clinical meaning.</p>
         </div>
-        <div>
-          <div class="muted" style="margin-bottom:6px">Sanitized Output (<span id="langBadge">—</span>)</div>
-          <pre id="outputText">Click "Sanitize Text" to run...</pre>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="segmented" aria-label="Language Preset">
+            <button id="preset-english" class="active" onclick="loadPreset('english', this)">English</button>
+            <button id="preset-hindi" onclick="loadPreset('hindi', this)">Hindi</button>
+            <button id="preset-hinglish" onclick="loadPreset('hinglish', this)">Hinglish</button>
+          </div>
+          <button class="btn-primary" onclick="runSanitize()">Sanitize</button>
         </div>
       </div>
-      <div class="row">
-        <span class="muted">Aggregate Detections:</span>
-        <div id="countsPills" class="pills" style="margin-top:0"></div>
-      </div>
-      <div class="row">
-        <span class="muted">Meaning &amp; Assertion Polarities:</span>
-        <div id="assertionPills" class="pills" style="margin-top:0"></div>
+
+      <div class="panel">
+        <div class="split">
+          <div class="pane">
+            <div class="pane-head">
+              <span>Input Note</span>
+              <span>Synthetic</span>
+            </div>
+            <textarea id="inputText" aria-label="Input clinical note"></textarea>
+          </div>
+          <div class="pane">
+            <div class="pane-head">
+              <span>De-identified Output</span>
+              <span id="langBadge">—</span>
+            </div>
+            <pre id="outputText">Running...</pre>
+          </div>
+        </div>
+        <div class="inspector">
+          <div class="insp-row">
+            <span class="insp-label">Detections</span>
+            <div id="countsPills" class="insp-row"></div>
+          </div>
+          <div class="insp-row">
+            <span class="insp-label">Assertions</span>
+            <div id="assertionPills" class="insp-row"></div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="card">
-      <h2>2. End-to-End Batch Pipeline Runner (<code>main.run</code>)</h2>
-      <p class="muted">Run the full multi-format firewall (CSV, UTF-16 TSV, OPD JSON, FHIR R4 Bundles, TXT, Quarantine) on a local input folder with HMAC secret rotation.</p>
-      <div class="row">
-        <input id="inpDir" type="text" style="flex:2;min-width:260px" value="../secret-wards-kit/dev/input" />
-        <input id="secretKey" type="text" style="flex:1;min-width:140px" value="practice" placeholder="RAKSHA_SECRET" />
-        <button class="primary" onclick="runPipeline()">Run Batch Pipeline</button>
+    <!-- View 2: Batch Dataset -->
+    <section id="view-batch" class="view">
+      <div class="view-head">
+        <div>
+          <h1>Batch Dataset Firewall</h1>
+          <p>Run cross-script linkage, HMAC date shifting, generalization, and quarantine across a folder.</p>
+        </div>
+        <button class="btn-primary" onclick="runPipeline()">Run Batch</button>
       </div>
-      <pre id="pipelineOut" style="margin-top:12px;min-height:110px">Ready. Click "Run Batch Pipeline" to execute.</pre>
+
+      <div class="panel">
+        <div class="form-row">
+          <label for="inpDir">Input Directory</label>
+          <input id="inpDir" type="text" value="../secret-wards-kit/dev/input" />
+        </div>
+        <div class="form-row">
+          <label for="secretKey">HMAC Secret</label>
+          <input id="secretKey" type="text" value="practice" placeholder="RAKSHA_SECRET" />
+        </div>
+        <pre id="pipelineOut" style="min-height:220px">Ready. Click "Run Batch" to process the dataset.</pre>
+      </div>
+    </section>
+
+    <!-- View 3: Evaluation -->
+    <section id="view-eval" class="view">
+      <div class="view-head">
+        <div>
+          <h1>Practice Evaluation</h1>
+          <p>Measured on 200 synthetic hospital files via validate_output.py and check_dev.py.</p>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-tile">
+          <div class="metric-k">Personal Data Leaked</div>
+          <div class="metric-v">4.8%</div>
+          <div class="metric-d">154 / 3,230 probes · 0.0% filename &amp; base64</div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-k">Medical Data Kept</div>
+          <div class="metric-v">96.3%</div>
+          <div class="metric-d">4,676 / 4,855 doses, vitals &amp; diagnoses</div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-k">Patient Linkage</div>
+          <div class="metric-v">1.00 / 0.90</div>
+          <div class="metric-d">Precision 1.00 · F0.5 0.90 · 0 wrongful merges</div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-k">Canaries &amp; Raw Copies</div>
+          <div class="metric-v">0 / 0</div>
+          <div class="metric-d">0 / 4 planted canaries · 0 raw copies</div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -176,7 +443,18 @@
       hinglish: "NURSING NOTES - Ward 8 (Medicine), Bed 2 - ADM000161\nShahid sahab ka BP 117/82, pulse 106. Bukhar 103 F. Paracetamol 650 mg diya.\nPatient ko bukhar nahi hai. Sulfa se allergy hai. F/H: Papa ko heart disease tha.\nAlt Phone: 098765-43210"
     };
 
-    function loadPreset(name) {
+    function switchView(name, btn) {
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      document.getElementById("view-" + name).classList.add("active");
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+
+    function loadPreset(name, btn) {
+      if (btn) {
+        btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+      }
       document.getElementById("inputText").value = PRESETS[name];
       runSanitize();
     }
@@ -190,17 +468,17 @@
       });
       const data = await resp.json();
       document.getElementById("outputText").textContent = data.text;
-      document.getElementById("langBadge").textContent = "detected: " + data.language;
+      document.getElementById("langBadge").textContent = data.language;
 
       const cp = document.getElementById("countsPills");
       cp.innerHTML = "";
       const entries = Object.entries(data.counts || {});
       if (!entries.length) {
-        cp.innerHTML = '<span class="pill">0 detections</span>';
+        cp.innerHTML = '<span class="chip">0 detections</span>';
       } else {
         for (const [k, v] of entries) {
           const span = document.createElement("span");
-          span.className = "pill";
+          span.className = "chip";
           span.textContent = `${k}: ${v}`;
           cp.appendChild(span);
         }
@@ -210,15 +488,15 @@
       ap.innerHTML = "";
       for (const a of (data.assertions || [])) {
         const span = document.createElement("span");
-        span.className = `pill ${a.polarity}`;
-        span.textContent = `[${a.polarity}] ${a.text}`;
+        span.className = `chip ${a.polarity}`;
+        span.textContent = `${a.polarity} · ${a.text}`;
         ap.appendChild(span);
       }
     }
 
     async function runPipeline() {
       const outEl = document.getElementById("pipelineOut");
-      outEl.textContent = "Running pipeline...";
+      outEl.textContent = "Processing dataset...";
       const input_dir = document.getElementById("inpDir").value;
       const secret = document.getElementById("secretKey").value;
       const resp = await fetch("/api/pipeline", {
