@@ -1,4 +1,4 @@
-"""WardProof first slice: synthetic laboratory CSVs only; quarantine the rest."""
+"""Offline release pipeline for supported synthetic laboratory exports."""
 import argparse
 import csv
 import hashlib
@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import resource
 import time
+
+from formats.lab_json import lab_json
 
 HEADER = 'sample_id patient_name age_sex uhid ref_doctor test result unit ref_range collected_on reported_on'.split()
 TESTS = {'haemoglobin', 'hemoglobin', 'creatinine', 'serum creatinine', 'glucose', 'platelet count', 'sodium', 'potassium', 'tsh', 'wbc', 'hba1c', 'crp'}
@@ -74,19 +76,25 @@ def run(inp, out, secret):
             with path.open('rb') as f:
                 digest = hashlib.file_digest(f, 'sha256').hexdigest()
             entry = {'input_sha256': digest, 'output': None, 'status': 'quarantined', 'reason': 'unsupported_format'}
-            if path.suffix.lower() == '.csv' and path.stat().st_size < 8_000_000:
+            ext = path.suffix.lower()
+            if ext in {'.csv', '.json'} and path.stat().st_size < 8_000_000:
                 try:
-                    text, patients, identifiers = lab_csv(path.read_bytes(), source, secret)
-                except (ValueError, csv.Error):
+                    data = path.read_bytes()
+                    if ext == '.json':
+                        text, patients, identifiers = lab_json(data)
+                    else:
+                        text, patients, identifiers = lab_csv(data, source, secret)
+                except (ValueError, RecursionError, csv.Error):
                     pass
                 else:
                     # Do not disclose unverified filenames or folder names in the release.
-                    name = 'sanitized/lab/' + token(secret, 'path', source) + '.csv'
+                    name = 'sanitized/lab/' + token(secret, 'path', source) + ext
                     (out / name).parent.mkdir(exist_ok=True)
                     (out / name).write_bytes(text.encode())
                     entry = {'input_sha256': digest, 'output': name, 'status': 'sanitized'}
                     for i, patient in enumerate(patients):
-                        links.write(json.dumps({'file': name, 'loc': f'row:{i}', 'patient': patient}) + '\n')
+                        loc = 'doc' if ext == '.json' else f'row:{i}'
+                        links.write(json.dumps({'file': name, 'loc': loc, 'patient': patient}) + '\n')
                     counts['records_processed'] += len(patients)
                     counts['records_linked'] += sum(p is not None for p in patients)
                     counts['identifiers_detected'] += identifiers
