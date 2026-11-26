@@ -12,7 +12,7 @@ import time
 
 from formats.fhir import bundle
 from formats.lab_json import lab_json, parse, ASSAYS
-from formats.records import decode, outpatient, registration, registration_json, registry_json, seed, table
+from formats.records import billing, decode, outpatient, registration, registration_json, registry_json, seed, table
 from identity.link import Index, token
 from clinical.text import note
 from clinical.risk import RiskSummary
@@ -27,7 +27,7 @@ INVALID = (ValueError, TypeError, KeyError, IndexError, AttributeError, Recursio
 
 
 def lab_csv(data, index):
-    table = csv.reader(io.StringIO(data.decode('utf-8-sig'), newline=''), strict=True)
+    table = csv.reader(io.StringIO(decode(data), newline=''), strict=True)
     if next(table, None) != HEADER:
         raise ValueError
     target = io.StringIO(newline='')
@@ -47,7 +47,7 @@ def lab_csv(data, index):
             clean['result'] = row['result']
         if re.fullmatch(f'{NUMBER} *[-–] *{NUMBER}', row['ref_range']):
             clean['ref_range'] = row['ref_range']
-        patient = index.lookup(row['uhid'])
+        patient = index.lookup(row['uhid'], row['patient_name'])
         if patient:
             clean['uhid'] = patient
             for key in ('collected_on', 'reported_on'):
@@ -118,15 +118,19 @@ def run(inp, out, secret):
                             category = 'registration'
                         except ValueError:
                             if ext != '.csv': raise
-                            text, patients, identifiers = lab_csv(data, index)
-                            category = 'lab'
+                            try:
+                                text, patients, identifiers = lab_csv(data, index)
+                                category = 'lab'
+                            except ValueError:
+                                text, patients, identifiers = billing(data, index)
+                                category = 'billing'
                 except INVALID:
                     pass
                 else:
                     if category in {'opd', 'fhir'}:
                         risk.add(category, json.loads(text), patients)
                     # Keep recognized neutral path components, pseudonymize the rest in place.
-                    folders = {'registration','prescriptions','notes','discharge','opd','lab','fhir'}
+                    folders = {'registration','prescriptions','notes','discharge','opd','lab','fhir','billing'}
                     parts = path.relative_to(inp).parts
                     parents = [part if part in folders else 'dir-' + token(secret, 'dir', *parts[:i+1])
                                for i, part in enumerate(parts[:-1])]

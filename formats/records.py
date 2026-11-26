@@ -6,6 +6,7 @@ import re
 
 from clinical.text import DRUGS, DX, DURATION, FREQ, STRENGTH, facts
 from formats.lab_json import require
+from identity.link import parse_date
 
 
 def decode(data):
@@ -63,11 +64,48 @@ def registration(data,ext,index):
     return target.getvalue(),locs,detected
 
 
+BILL_HEADER = 'bill_no uhid patient_name pmjay_id payer_pan policy_no package_code procedure admission_date discharge_date amount_inr status'.split()
+BILL_PROCEDURES = {'SG039B':'Laparoscopic cholecystectomy','MG006A':'Caesarean section','SE001A':'Cataract surgery (phacoemulsification)',
+                   'MG064A':'Haemodialysis session','SG001A':'Appendicectomy','SG050A':'Inguinal hernia repair',
+                   'SG071A':'Whipple procedure (pancreaticoduodenectomy)','SN045A':'Deep brain stimulation'}
+
+
+def billing(data,index):
+    rows=csv.reader(io.StringIO(decode(data),newline=''),strict=True)
+    header=next(rows,[]); require(header==BILL_HEADER)
+    target=io.StringIO(newline=''); writer=csv.writer(target); writer.writerow(header)
+    patients=[]; detected=0
+    for i, cells in enumerate(rows):
+        require(len(cells)==len(header)); raw=dict(zip(header,cells))
+        code,procedure,state=(raw[k] for k in ('package_code','procedure','status'))
+        require(BILL_PROCEDURES.get(code)==procedure and state in {'approved','pending','settled','rejected'})
+        start,end=(parse_date(raw[k]) for k in ('admission_date','discharge_date'))
+        require(start and end and start<=end)
+        patient=index.lookup(raw['uhid'],raw['patient_name'])
+        writer.writerow(['',patient or '', '', '', '', '', code,procedure,
+                         index.shift(raw['admission_date'],patient),index.shift(raw['discharge_date'],patient),'',state])
+        patients.append((f'row:{i}',patient)); detected+=sum(bool(v) for v in cells[:6])
+    require(patients)
+    return target.getvalue(),patients,detected
+
+
+def blank_fields(obj, names):
+    require(type(obj) is dict)
+    return {k: '' if type(obj[k]) is str else None for k in names.split() if k in obj}
+
+
 def registration_json(doc,index):
     rows=registry_json(doc); locs=[];patients=[]
-    for i,r in enumerate(rows):
-        p=index.lookup(r['key']);locs.append((f'/patients/{i}',p));patients.append({'uhid':p or '', 'registered_on':index.shift(r['date'],p)})
-    return json.dumps({'schema':'dhh.registration.v3','patients':patients}),locs,sum(sum(bool(r.get(k)) for k in ('key','first','last','phone','dob','village')) for r in rows)
+    for i,(raw,r) in enumerate(zip(doc['patients'],rows,strict=True)):
+        p=index.lookup(r['key']);locs.append((f'/patients/{i}',p))
+        clean=blank_fields(raw,'gender dob age')
+        for field,names in {'name':'first last local','guardian':'relation name','contact':'mobile email',
+                            'address':'line village tehsil district pin','ids':'aadhar_no abha abha_address'}.items():
+            if field in raw: clean[field]=blank_fields(raw[field],names)
+        clean.update(uhid=p or '', registered_on=index.shift(r['date'],p));patients.append(clean)
+    clean={'schema':'dhh.registration.v3','patients':patients,**blank_fields(doc,'exported_at')}
+    if 'facility' in doc: clean['facility']=blank_fields(doc['facility'],'name type state')
+    return json.dumps(clean),locs,sum(sum(bool(r.get(k)) for k in ('key','first','last','phone','dob','village')) for r in rows)
 
 
 def outpatient(doc,index):
@@ -86,4 +124,6 @@ def outpatient(doc,index):
             rx.append({k:m[k] for k in ('drug','strength','frequency','duration')})
         result.append({'visit_id':'','patient_ref':p or '', 'visit_date':index.shift(v['visit_date'],p), 'department':'','doctor':'',
                        'complaints':facts(v.get('complaints','')), 'history':facts(v.get('history','')), 'notes':facts(v.get('notes','')),'vitals':safe,'diagnosis':dx,'rx':rx})
-    return json.dumps({'visits':result},ensure_ascii=False),locs,detected
+    clean={'visits':result}
+    if '_export_meta' in doc: clean['_export_meta']=blank_fields(doc['_export_meta'],'system hospital exported_by generated_at source_path')
+    return json.dumps(clean,ensure_ascii=False),locs,detected

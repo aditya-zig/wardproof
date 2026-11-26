@@ -64,6 +64,43 @@ class Journey(unittest.TestCase):
         self.assertNotIn('synthetic-private-marker', str(outputs))
         self.assertIn('Metformin 500 mg BD x 7 days', str(outputs))
 
+    def test_registration_keeps_schema_and_does_not_invent_age(self):
+        patient = {'uhid':'JJH-91480', 'name':{'first':'Meera','last':'Shah','local':'मीरा शाह'},
+                   'dob':'1980-04-15','age':52,'guardian':{'relation':'mother','name':'Example Relative'},
+                   'contact':{'mobile':'9123456780','email':None}, 'address':{'village':'Rampur'},
+                   'ids':{'aadhar_no':999988887777}, 'registered_on':'2032-02-18'}
+        doc = {'schema':'dhh.registration.v3','facility':{'name':'Sensitive Facility','type':'charitable','state':'Example State'},
+               'exported_at':'2032-02-19','patients':[patient]}
+        _, ledger, outputs = release({'registration/patients.json':json.dumps(doc)})
+        result = json.loads(next(iter(outputs.values())))
+        self.assertEqual(set(result), set(doc))
+        cleaned = result['patients'][0]
+        self.assertEqual(set(cleaned), set(patient))
+        self.assertEqual(cleaned['uhid'], ledger[0]['patient'])
+        self.assertEqual(cleaned['name'], {'first':'','last':'','local':''})
+        self.assertIsNone(cleaned['age'])
+        self.assertIsNone(cleaned['ids']['aadhar_no'])
+        self.assertEqual(cleaned['contact'], {'mobile':'','email':None})
+        self.assertNotIn('Sensitive Facility', str(result))
+        self.assertNotIn('1980-04-15', str(result))
+        self.assertNotEqual(cleaned['registered_on'], '2032-02-18')
+
+    def test_billing_keeps_procedure_and_stay_but_not_payer(self):
+        header = 'bill_no,uhid,patient_name,pmjay_id,payer_pan,policy_no,package_code,procedure,admission_date,discharge_date,amount_inr,status'
+        raw = ','.join(('BILL-PRIVATE','JJH-90440','Meera Shah','PMJAY-PRIVATE','PAN-PRIVATE','POLICY-PRIVATE',
+                        'SG001A','Appendicectomy','02/03/2032','11/03/2032','38500','approved'))
+        _, ledger, outputs = release({'billing/export.csv':f'{header}\n{raw}\n'})
+        text = next(iter(outputs.values())); columns, row = text.splitlines()
+        self.assertEqual(columns, header)
+        row = dict(zip(columns.split(','),row.split(','),strict=True))
+        self.assertEqual(row['procedure'],'Appendicectomy')
+        self.assertEqual(row['package_code'],'SG001A')
+        self.assertEqual(row['uhid'],ledger[0]['patient'])
+        start,end = (date.fromisoformat(row[k]) for k in ('admission_date','discharge_date'))
+        self.assertEqual((end-start).days,9)
+        for key in ('bill_no','patient_name','pmjay_id','payer_pan','policy_no','amount_inr'):
+            self.assertEqual(row[key],'')
+
     def test_context_is_not_released_as_a_positive_finding(self):
         _, _, outputs = release({'notes/example.txt': 'NURSING NOTES\nNo C/O fever\nFamily history: Parkinson\'s disease\nAllergy: Amoxicillin 500 mg\nBP 115/82\nTab Ramipril 5 mg 1-0-0\n'})
         text = next(iter(outputs.values()))

@@ -75,7 +75,7 @@ def lab_json(doc, index):
     patient = doc['patient']
     fields(patient, 'name age sex phone hospital_uhid')
     count = sum(bool(patient[k]) for k in ('name', 'phone', 'hospital_uhid'))
-    ref = index.lookup(patient['hospital_uhid'])
+    ref = index.lookup(patient['hospital_uhid'], patient['name'])
     for k in ('name', 'phone', 'hospital_uhid', 'sex'):
         patient[k] = ''
     patient['hospital_uhid'] = ref or ''

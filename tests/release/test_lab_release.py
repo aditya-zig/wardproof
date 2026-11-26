@@ -26,7 +26,7 @@ class LabRelease(unittest.TestCase):
             inp, out = root / 'in', root / 'out'
             inp.mkdir()
             for name, data in files.items():
-                (inp / name).write_text(data, encoding='utf-8')
+                (inp / name).write_bytes(data if isinstance(data, bytes) else data.encode('utf-8'))
             proc = subprocess.run([sys.executable, '-B', str(ROOT / 'main.py'), '--input', str(inp),
                                    '--output', str(out)], env={**os.environ, 'RAKSHA_SECRET': 'test-only'},
                                   check=True, capture_output=True, text=True)
@@ -37,6 +37,22 @@ class LabRelease(unittest.TestCase):
             for private in ('9012345678', 'नीला नमूना', 'ZZ-123456', 'Private referral', 'test-only'):
                 self.assertNotIn(private, visible)
             return json.loads(payload['report.json']), payload
+
+    def test_csv_decodes_utf16_and_abstains_on_conflicting_name(self):
+        registry = {'schema':'dhh.registration.v3', 'patients':[{'uhid':'JJH-91480',
+                    'name':{'first':'Example','last':'Patient'}, 'registered_on':'2032-01-01',
+                    'address':{'village':'Rampur'}, 'contact':{'mobile':''}, 'dob':'1980-01-01'}]}
+        header = 'sample_id,patient_name,age_sex,uhid,ref_doctor,test,result,unit,ref_range,collected_on,reported_on'
+        row = 'Private sample,नीला नमूना,,JJH-91480,,Haemoglobin,<10.10,g/dL,12–16,2032-01-02,2032-01-03'
+        for encoding in ('utf-8', 'utf-16'):
+            with self.subTest(encoding=encoding):
+                _, payload = self.run_release({'patients.json':json.dumps(registry),
+                                             'results.csv':f'{header}\n{row}\n'.encode(encoding)})
+                lab = [json.loads(line) for line in payload['records.jsonl'].splitlines()
+                       if 'results.csv' in line]
+                self.assertEqual(len(lab), 1)
+                self.assertIsNone(lab[0]['patient'])
+                self.assertIn('Haemoglobin,<10.10,g/dL,12–16', payload['sanitized/results.csv'])
 
     def test_json_report_keeps_clinical_panel_without_identity(self):
         original = example()
