@@ -10,7 +10,9 @@
 .TL
 WardProof
 .AU
-Team WardProof  |  GitHub: aditya-zig/wardproof
+Team: Hard stuck-debugging
+.br
+Aditya S (lead), Mradul Verma, Moawya Mahmoud Shariff, Ayush Roy
 .AI
 Track 3: Secret Wards  |  github.com/aditya-zig/wardproof
 .PP
