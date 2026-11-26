@@ -41,18 +41,24 @@ def reject_constant(_):
     raise ValueError('Nonstandard JSON number')
 
 
-def lab_json(data):
-    doc = json.loads(data.decode('utf-8-sig'), parse_float=decimal_value,
-                     parse_constant=reject_constant, object_pairs_hook=unique_object)
+def parse(data):
+    return json.loads(data.decode('utf-8-sig'), parse_float=decimal_value,
+                      parse_constant=reject_constant, object_pairs_hook=unique_object)
+
+
+def lab_json(doc, index):
     fields(doc, 'lab report_type patient referred_by collected panels remarks')
     require(doc['report_type'] == 'Diagnostic report')
     patient = doc['patient']
     fields(patient, 'name age sex phone hospital_uhid')
     count = sum(bool(patient[k]) for k in ('name', 'phone', 'hospital_uhid'))
+    ref = index.lookup(patient['hospital_uhid'])
     for k in ('name', 'phone', 'hospital_uhid', 'sex'):
         patient[k] = ''
+    patient['hospital_uhid'] = ref or ''
+    doc['collected'] = index.shift(str(doc['collected'])[:10], ref)
     patient['age'] = None  # Unknown, not a fabricated numeric age.
-    for k in ('lab', 'referred_by', 'collected', 'remarks'):
+    for k in ('lab', 'referred_by', 'remarks'):
         doc[k] = ''
     require(type(doc['panels']) is list and doc['panels'])
     for panel in doc['panels']:
@@ -66,4 +72,4 @@ def lab_json(data):
             require(type(result['value']) in (int, float) and abs(result['value']) <= 1_000_000)
             number = r'-?[0-9]{1,6}(?:\.[0-9]{1,4})?'
             require(re.fullmatch(f'{number} *[-–] *{number}', result['range']))
-    return json.dumps(doc, ensure_ascii=False, allow_nan=False), [None], count
+    return json.dumps(doc, ensure_ascii=False, allow_nan=False), [('doc', ref)], count
