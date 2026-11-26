@@ -85,6 +85,17 @@ class Journey(unittest.TestCase):
         self.assertNotIn('1980-04-15', str(result))
         self.assertNotEqual(cleaned['registered_on'], '2032-02-18')
 
+    def test_short_discharge_preserves_facts_without_guessing_identity_or_year(self):
+        raw = ('Discharge note\n\nPrivate Patient, W/o Private Relative, discharged in stable condition.\n'
+               'Visit: 5 September\nTreated for Essential (primary) hypertension. BP 168/92. Continue Amlodipine 5 mg 0-0-1.\n')
+        _, ledger, outputs = release({'discharge/Private Patient.txt':raw})
+        text, = outputs.values()
+        self.assertIsNone(ledger[0]['patient'])
+        for value in ('Essential (primary) hypertension','BP 168/92','Amlodipine 5 mg 0-0-1'):
+            self.assertIn(value,text)
+        for private in ('Private Patient','Private Relative','5 September'):
+            self.assertNotIn(private, str(outputs))
+
     def test_billing_keeps_procedure_and_stay_but_not_payer(self):
         header = 'bill_no,uhid,patient_name,pmjay_id,payer_pan,policy_no,package_code,procedure,admission_date,discharge_date,amount_inr,status'
         raw = ','.join(('BILL-PRIVATE','JJH-90440','Meera Shah','PMJAY-PRIVATE','PAN-PRIVATE','POLICY-PRIVATE',
@@ -163,6 +174,11 @@ class Journey(unittest.TestCase):
         self.assertEqual((date.fromisoformat(period['end'])-date.fromisoformat(period['start'])).days, 9)
         self.assertEqual(report['risk_proxy']['fhir_stay_patients_evaluated'], 1)
         self.assertEqual(report['risk_proxy']['fhir_patients_with_unique_stay_diagnosis'], 1)
+        # A resolvable reference can still be invalid for this R4 element.
+        bundle['entry'][0]['resource']['encounter'] = {'reference':'urn:uuid:'+d}
+        report, ledger, outputs = release({'fhir/wrong-target.json':json.dumps(bundle)})
+        self.assertEqual(report['counts']['files_quarantined'], 1)
+        self.assertEqual((ledger, outputs), ([], {}))
 
 
 if __name__ == '__main__': unittest.main()

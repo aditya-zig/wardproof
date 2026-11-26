@@ -50,6 +50,12 @@ def capture(pattern,text):
 
 
 def note(text,index):
+    if re.match(r'(?i)^Discharge note[ \t]*\r?\n', text):
+        clinical=facts('\n'.join(line for line in text.splitlines() if line.startswith('Treated for ')))
+        if not clinical: raise ValueError
+        # No verified identifier or full date in this layout; never infer either.
+        identifiers=2 if re.search(r'(?im)^.+, (?:W/o|S/o|D/o|H/o) .+, discharged\b', text) else 0
+        return clinical+'\n', [('doc',None)], identifiers
     if not re.search(r'(?im)^(?:DISCHARGE SUMMARY|डिस्चार्ज सारांश|NURSING NOTES\b|.*(?:OPD Prescription|ओपीडी पर्चा)$|Rx\s*$)',text):
         return forwarded_lab(text)
     key=capture(r'(?<!\w)(?:UHID|Reg No|पंजीकरण सं\.):[ \t]*([^\s]+)',text)

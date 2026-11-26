@@ -31,7 +31,10 @@ def bundle(doc,index,source):
         require(value in allowed)
         return value
 
-    def ref(r): return {'reference':ids[r['reference']]}
+    def ref(r, targets=None):
+        url=r['reference']
+        if targets: require(items[url]['resourceType'] in targets)
+        return {'reference':ids[url]}
     def subject(r):
         require(r['subject']['reference']==pu)
         return ref(r['subject'])
@@ -62,9 +65,9 @@ def bundle(doc,index,source):
         if u not in ids: continue
         t=r['resourceType'];s={'resourceType':t,'id':ids[u][9:]}
         if t=='Composition':
-            s.update(status=fixed(r['status'], ('preliminary','final','amended','entered-in-error')),type={'coding':[{'system':'http://snomed.info/sct','code':'373942005','display':'Discharge summary'}]},subject=subject(r),date=shifted(r['date']),author=[ref(v) for v in r['author']],title='Discharge Summary')
+            s.update(status=fixed(r['status'], ('preliminary','final','amended','entered-in-error')),type={'coding':[{'system':'http://snomed.info/sct','code':'373942005','display':'Discharge summary'}]},subject=subject(r),date=shifted(r['date']),author=[ref(v, ('Practitioner','Patient','Organization')) for v in r['author']],title='Discharge Summary')
             require(s['author']);s['section']=[{'entry': found} for section in r.get('section',[]) if (found:=refs(section.get('entry',[])))]
-            if 'encounter' in r:s['encounter']=ref(r['encounter'])
+            if 'encounter' in r:s['encounter']=ref(r['encounter'], ('Encounter',))
         elif t=='Patient':
             if patient: s['identifier']=[{'system':'urn:wardproof:patient','value':patient}]
         elif t in ('Practitioner','Organization'):
@@ -73,7 +76,7 @@ def bundle(doc,index,source):
             cls=fixed(r['class']['code'], ('IMP','AMB','EMER','OBSENC'))
             s.update(status=fixed(r['status'], ('in-progress','finished','cancelled')),subject=subject(r),**{'class':{'system':'http://terminology.hl7.org/CodeSystem/v3-ActCode','code':cls}})
             if 'period' in r:s['period']={k:shifted(r['period'][k]) for k in ('start','end') if k in r['period']}
-            if 'serviceProvider' in r:s['serviceProvider']=ref(r['serviceProvider'])
+            if 'serviceProvider' in r:s['serviceProvider']=ref(r['serviceProvider'], ('Organization',))
         elif t=='Observation':
             s.update(observation(r),status=fixed(r['status'], ('preliminary','final','amended','corrected')),subject=subject(r))
             if 'effectiveDateTime' in r:s['effectiveDateTime']=shifted(r['effectiveDateTime'])
@@ -88,7 +91,7 @@ def bundle(doc,index,source):
                 state=fixed(coding['code'], ('unconfirmed','provisional','differential','confirmed','refuted','entered-in-error'))
                 s['verificationStatus']={'coding':[{'system':'http://terminology.hl7.org/CodeSystem/condition-ver-status','code':state}]}
                 if state=='entered-in-error': require('clinicalStatus' not in s)
-            if 'encounter' in r:s['encounter']=ref(r['encounter'])
+            if 'encounter' in r:s['encounter']=ref(r['encounter'], ('Encounter',))
             if 'recordedDate' in r:s['recordedDate']=shifted(r['recordedDate'])
         elif t=='MedicationRequest':
             drug=r['medicationCodeableConcept']['text'];require(MED.fullmatch(drug))
