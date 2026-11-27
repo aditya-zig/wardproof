@@ -22,6 +22,7 @@ def bundle(doc,index,source):
         require(e['resource']['id']==str(UUID(url[9:])))
         items[url]=e['resource']
     people=[(u,r) for u,r in items.items() if r['resourceType']=='Patient'];require(len(people)==1)
+    require(sum(r['resourceType']=='Encounter' for r in items.values()) <= 1)
     pu,person=people[0]
     candidates={p for i in person.get('identifier',[]) if (p:=index.lookup(i.get('value','')))}
     patient=next(iter(candidates)) if len(candidates)==1 else None
@@ -65,6 +66,8 @@ def bundle(doc,index,source):
         if u not in ids: continue
         t=r['resourceType'];s={'resourceType':t,'id':ids[u][9:]}
         if t=='Composition':
+            coding, = r['type']['coding']
+            require(coding['system']=='http://snomed.info/sct' and coding['code']=='373942005')
             s.update(status=fixed(r['status'], ('preliminary','final','amended','entered-in-error')),type={'coding':[{'system':'http://snomed.info/sct','code':'373942005','display':'Discharge summary'}]},subject=subject(r),date=shifted(r['date']),author=[ref(v, ('Practitioner','Patient','Organization')) for v in r['author']],title='Discharge Summary')
             require(s['author']);s['section']=[{'entry': found} for section in r.get('section',[]) if (found:=refs(section.get('entry',[])))]
             if 'encounter' in r:s['encounter']=ref(r['encounter'], ('Encounter',))

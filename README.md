@@ -24,6 +24,8 @@ python3 "$KIT/check_submission.py" --repo . --run
 
 ## Researcher demo (offline)
 
+[Two-page project brief](docs/brief.pdf) · [18-second demo recording](docs/demo/wardproof.mp4) · [Self-contained demo HTML](docs/demo/wardproof.html) (download and open locally). The demo uses synthetic records.
+
 ```sh
 DEMO=$(mktemp -d)
 python3 -B tools/scenario.py "$DEMO/trial"
@@ -46,7 +48,7 @@ CSV / TSV / JSON / FHIR / notes → recognize supported schemas
 Unsupported / malformed → digest and quarantine status only; no exported copy
 ```
 
-- **Structured data:** Recognized registration CSV/TSV/JSON, lab CSV/TSV/JSON (lab result columns may be reordered; unknown or duplicate columns are rejected), billing CSV, OPD JSON, and a narrow single-patient FHIR R4 document subset. FHIR references are regenerated, selected reference target types are checked, and attachments, narrative and source metadata are removed. It is not a generic FHIR validator.
+- **Structured data:** Recognized registration CSV/TSV/JSON, lab CSV/TSV/JSON (lab result columns may be reordered; unknown or duplicate columns are rejected), billing CSV, OPD JSON, and FHIR R4 single-patient discharge summaries (SNOMED CT 373942005) with at most one encounter. Other document types and multi-encounter bundles are quarantined rather than mislabeled or paired with the wrong stay. FHIR references are regenerated, selected reference target types are checked, and attachments, narrative and source metadata are removed. It is not a generic FHIR validator.
 - **Clinical text:** Positive projection of recognized medicines, doses, observations and diagnoses, not an unfiltered note with names blotted out. `C/O fever` survives; `C/O FakeRelative` does not. Selected Hindi discharge diagnoses and dates, and lab values in forwarded text panels, are supported. Forwarded panels without corroborated identity remain unlinked. Lines with recognized negation, family history, allergy and stop markers are withheld rather than turned into positive findings. Unrecognized context can still be lost. Supported FHIR condition verification codes are preserved. Clinician names and unrecognized clinical spans are not retained.
 - **Linkage and privacy:** Explicit Devanagari transliteration plus phonetic matching. Cross-facility linkage requires phone, DOB and compatible name; a text reference without an ID can match a unique full name and village. Ambiguous candidates abstain. Keyed date offsets preserve intervals within a patient. Age and location are dropped, not generalized. Unknown names and paths are not emitted. Rare diagnoses and exact stay lengths can still be identifying.
 - **Storage:** No raw intermediates, identity indexes, secrets, or quarantine copies on disk. Input is read-only from WardProof's perspective. New directories and files are private by default; no raw strings are logged. Store raw inputs and released data on an encrypted volume and keep its credentials outside this repo. The app does not encrypt the input volume itself. Treat output as sensitive, not anonymous.
@@ -63,7 +65,7 @@ Kit `6c0a85a`: **182/200 files released**, 18 quarantined, 773 ledger records, 6
 
 ### Problem-statement gaps
 
-- The organizer's checker accepts the output, but the written spec also asks for original paths and schemas where safe. WardProof preserves recognized neutral path components and nesting; it pseudonymizes other components in place. It rebuilds the supported FHIR subset rather than preserving arbitrary input structure. Recognized registration JSON keys remain in place; sensitive numeric fields use `null` rather than made-up values. Billing CSV preserves allowlisted clinical procedures and shifted dates, not payer details or amounts.
+- Noncanonical JSON decimals (such as `10.10`) and exponent notation are quarantined to avoid silently changing precision or scale. The organizer's checker accepts the output, but the written spec also asks for original paths and schemas where safe. WardProof preserves recognized neutral path components and nesting; it pseudonymizes other components in place. It rebuilds the supported FHIR subset rather than preserving arbitrary input structure. Recognized registration JSON keys remain in place; sensitive numeric fields use `null` rather than made-up values. Billing CSV preserves allowlisted clinical procedures and shifted dates, not payer details or amounts.
 - The system keeps recognized clinical values, not every clinical detail. It drops clinician names rather than distinguishing them from all relatives, and abstains on weak identity evidence. An encrypted volume must be configured separately. The practice checks do not reproduce the official hidden attack.
 
 [RedwoodAI](https://github.com/diyadesai1/RedwoodAI) inspired the privacy-first document workflow; no code, models, or services from it are used.

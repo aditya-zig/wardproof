@@ -40,12 +40,15 @@ def table(data,ext):
 
 def registry_json(doc):
     require(isinstance(doc,dict) and doc.get('schema')=='dhh.registration.v3' and isinstance(doc.get('patients'),list))
+    require(doc.get('resourceType') != 'Bundle' and 'visits' not in doc)
+    require('facility' not in doc or type(doc['facility']) is dict)
     result=[]
     for p in doc['patients']:
-        require(type(p) is dict)
+        require(type(p) is dict and all(type(p[k]) is dict for k in ('name','guardian','contact','address','ids') if k in p))
         name=p['name'];address=p['address'];contact=p['contact']
         result.append({'key':p['uhid'],'first':name['first'],'last':name['last'],'local':name.get('local',''),
                        'village':address['village'],'dob':p['dob'],'phone':contact['mobile'] or '', 'date':p['registered_on']})
+    require(all(isinstance(row[k], str) for row in result for k in ('key','first','last','phone','village')))
     return result
 
 

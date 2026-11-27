@@ -100,6 +100,16 @@ class Journey(unittest.TestCase):
         self.assertNotIn('1980-04-15', str(result))
         self.assertNotEqual(cleaned['registered_on'], '2032-02-18')
 
+    def test_quarantined_registry_cannot_supply_identity_evidence(self):
+        patient = dict(uhid='DEMO-1001', name=dict(first='Example', last='Person'),
+                       address=dict(village=''), contact=dict(mobile=''), dob='', registered_on='')
+        note = 'NURSING NOTES\nUHID: DEMO-1001\nBP 115/82\n'
+        for bad in [dict(patients=[patient], facility=[]),
+                    dict(patients=[patient, dict(patient, name=dict(first=7, last='Example'))])]:
+            report, ledger, _ = release({'registry.json': json.dumps(dict(schema='dhh.registration.v3', **bad)), 'notes.txt': note})
+            self.assertEqual(report['counts']['files_quarantined'], 1)
+            self.assertEqual([r['patient'] for r in ledger], [None])
+
     def test_short_discharge_preserves_facts_without_guessing_identity_or_year(self):
         raw = ('Discharge note\n\nPrivate Patient, W/o Private Relative, discharged in stable condition.\n'
                'Visit: 5 September\nTreated for Essential (primary) hypertension. BP 168/92. Continue Amlodipine 5 mg 0-0-1.\n')
@@ -186,7 +196,7 @@ class Journey(unittest.TestCase):
         a,b,c,d,e,f,g=[str(UUID(int=i)) for i in range(1,8)]
         subject={'reference':'urn:uuid:'+b,'display':'FakePatient'}
         bundle={'resourceType':'Bundle','type':'document','entry':[
-            entry(a,'Composition',status='final',subject=subject,author=[{'reference':'urn:uuid:'+c}],date='2030-01-10T09:15:00+05:30',section=[{'title':'Labs','entry':[{'reference':'urn:uuid:'+d},{'reference':'urn:uuid:'+e}]}]),
+            entry(a,'Composition',type={'coding':[{'system':'http://snomed.info/sct','code':'373942005'}]},status='final',subject=subject,author=[{'reference':'urn:uuid:'+c}],date='2030-01-10T09:15:00+05:30',section=[{'title':'Labs','entry':[{'reference':'urn:uuid:'+d},{'reference':'urn:uuid:'+e}]}]),
             entry(b,'Patient',identifier=[{'value':'JJH-12345'}]),entry(c,'Practitioner',name=[{'text':'FakeDoctor'}]),
             entry(d,'Observation',status='preliminary',subject=subject,code={'coding':[{'code':'718-7','display':'Haemoglobin'}]},valueQuantity={'value':10.1,'unit':'g/dL'}),
             entry(e,'DocumentReference',subject=subject,content=[{'attachment':{'data':'RmFrZVBhdGllbnQ='}}]),
@@ -210,6 +220,16 @@ class Journey(unittest.TestCase):
         self.assertEqual((date.fromisoformat(period['end'])-date.fromisoformat(period['start'])).days, 9)
         self.assertEqual(report['risk_proxy']['fhir_stay_patients_evaluated'], 1)
         self.assertEqual(report['risk_proxy']['fhir_patients_with_unique_stay_diagnosis'], 1)
+        comp = bundle['entry'][0]['resource']
+        coding = comp['type']['coding'][0]
+        for field in ['code', 'system']:
+            old = coding[field]
+            coding[field] = 'unsupported'
+            self.assertEqual(release({'doc.json':json.dumps(bundle)})[2], {})
+            coding[field] = old
+        bundle['entry'].append(entry(str(UUID(int=8)), 'Encounter', **{k:v for k,v in bundle['entry'][-1]['resource'].items() if k not in ('id','resourceType')}))
+        self.assertEqual(release({'doc.json':json.dumps(bundle)})[2], {})
+        bundle['entry'].pop()
         # A resolvable reference can still be invalid for this R4 element.
         bundle['entry'][0]['resource']['encounter'] = {'reference':'urn:uuid:'+d}
         report, ledger, outputs = release({'fhir/wrong-target.json':json.dumps(bundle)})
