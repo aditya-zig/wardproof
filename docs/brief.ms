@@ -50,11 +50,11 @@ The same Hindi prescription and Latin registration can link without linking a na
 Measured privacy versus utility
 .PP
 .B "Official synthetic practice kit, revision 6c0a85a."
-181 of 200 files released; 19 quarantined. 773 ledger records, of which 694 have a pseudonym. On two logical CPUs with no network: about 0.14 seconds and 23 MiB peak RSS. The organizer contract validator passed; three repeat runs verified stability, key rotation, and no input changes.
+182 of 200 files released; 18 quarantined. 773 ledger records, of which 694 have a pseudonym. Local practice run: about 0.15 seconds and 23 MiB peak RSS. The organizer contract validator passed; three repeat runs verified stability, key rotation, and no input changes.
 .IP "Privacy" 15n
 No personal data flags in the practice checker (0/3,230 across English, Hindi and Hinglish). No planted canaries in output (0/4) and no raw copies of unsupported files. These probes do not cover every possible leak.
 .IP "Utility" 15n
-3,593/4,761 checked medical values kept (75.5%). The denominator does not include all quarantined medical values. Linkage precision 1.00, recall 0.80, F0.5 0.95 on the practice checker, not an official hidden score.
+3,920/4,777 checked medical values kept (82.1%), up from 75.5% before the latest clinical retention changes. The denominator omits quarantined probes. The release kept all 10 FHIR stays of at least nine days and all eight measured CSV lab medians. Linkage precision 1.00, recall 0.80, F0.5 0.95 on the practice checker, not an official hidden score.
 .IP "Residual risk" 15n
 We drop age and location and shift dates per patient, preserving intervals. In records with a diagnosis and shifted date in OPD/FHIR, 50/51 patients have at least one unique (shifted ISO week, diagnosis) pair. For FHIR stays, 16/19 patients have a unique (calendar-day stay length, diagnosis) pair. These proxies highlight potential singling-out; neither is the organizer's attack score.
 .NH 1
@@ -64,5 +64,5 @@ No raw staging area or persistent identity index. Secrets arrive via an environm
 .NH 1
 What still fails
 .PP
-Unfamiliar formats and attachments are not interpreted. Clinical phrases outside the allowlist can be lost, including context or negation. Address-only or name-only records often abstain. Rare diagnoses, repeated visits and exact intervals may still identify people. An independently authored fixture with alternate headers, date formats and namesakes passed, but no hidden or blind corpus was scored. Synthetic competition data only.
+Unfamiliar formats and attachments are not interpreted. Clinical phrases outside the allowlist can be lost, including context or negation. Address-only or name-only records often abstain. Rare diagnoses, repeated visits and exact intervals may still identify people. A team-authored changed-format scenario links two hospital exports and two notes, separates a namesake, and preserves its one expected nine-day stay. No independent or hidden corpus was scored. Synthetic competition data only.
 "

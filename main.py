@@ -11,7 +11,7 @@ import resource
 import time
 
 from formats.fhir import bundle
-from formats.lab_json import lab_json, parse, ASSAYS
+from formats.lab_json import lab_json, parse, ASSAYS, reference_ranges
 from formats.records import billing, decode, outpatient, registration, registration_json, registry_json, seed, table
 from identity.link import Index, token
 from clinical.text import note
@@ -26,18 +26,20 @@ NUMBER = r'[<>]?[0-9]{1,6}(?:\.[0-9]{1,4})?'
 INVALID = (ValueError, TypeError, KeyError, IndexError, AttributeError, RecursionError, csv.Error)
 
 
-def lab_csv(data, index):
-    table = csv.reader(io.StringIO(decode(data), newline=''), strict=True)
-    if next(table, None) != HEADER:
+def lab_csv(data, index, ext):
+    delimiter = '\t' if ext == '.tsv' else ','
+    table = csv.reader(io.StringIO(decode(data), newline=''), delimiter=delimiter, strict=True)
+    header = next(table, [])
+    if len(header) != len(HEADER) or set(header) != set(HEADER):
         raise ValueError
     target = io.StringIO(newline='')
-    writer = csv.DictWriter(target, HEADER)
+    writer = csv.DictWriter(target, header, delimiter=delimiter)
     writer.writeheader()
     patients, identifiers = [], 0
     for cells in table:
         if len(cells) != len(HEADER):
             raise ValueError
-        row = dict(zip(HEADER, cells))
+        row = dict(zip(header, cells))
         clean = {}
         if row['test'].casefold() in TESTS:
             clean['test'] = row['test']
@@ -96,7 +98,9 @@ def run(inp, out, secret):
                 digest = hashlib.file_digest(f, 'sha256').hexdigest()
             entry = {'input_sha256': digest, 'output': None, 'status': 'quarantined', 'reason': 'unsupported_format'}
             ext = path.suffix.lower()
-            if ext in {'.csv', '.tsv', '.txt', '.json'} and path.stat().st_size < 8_000_000:
+            if path.stat().st_size >= 8_000_000:
+                entry['reason'] = 'file_too_large'
+            elif ext in {'.csv', '.tsv', '.txt', '.json'}:
                 try:
                     data = path.read_bytes()
                     if ext == '.json':
@@ -117,15 +121,19 @@ def run(inp, out, secret):
                             text, patients, identifiers = registration(data, ext, index)
                             category = 'registration'
                         except ValueError:
-                            if ext != '.csv': raise
                             try:
-                                text, patients, identifiers = lab_csv(data, index)
+                                text, patients, identifiers = lab_csv(data, index, ext)
                                 category = 'lab'
                             except ValueError:
-                                text, patients, identifiers = billing(data, index)
-                                category = 'billing'
+                                if ext != '.csv': raise
+                                try:
+                                    text, patients, identifiers = billing(data, index)
+                                    category = 'billing'
+                                except ValueError:
+                                    text, patients, identifiers = reference_ranges(decode(data))
+                                    category = 'lab'
                 except INVALID:
-                    pass
+                    entry['reason'] = 'invalid_or_unrecognized_content'
                 else:
                     if category in {'opd', 'fhir'}:
                         risk.add(category, json.loads(text), patients)
@@ -137,7 +145,8 @@ def run(inp, out, secret):
                     stem = path.stem if re.fullmatch(r'(?:patients|visits|prescriptions|results|report|registration|sample)(?:_[0-9]{1,4})?', path.stem) else token(secret,'path',source)
                     name = '/'.join(('sanitized', *parents, stem + path.suffix))
                     (out / name).parent.mkdir(parents=True, exist_ok=True)
-                    (out / name).write_bytes(text.encode())
+                    with (out / name).open('xb') as dest:
+                        dest.write(text.encode('utf-8'))
                     entry = {'input_sha256': digest, 'output': name, 'status': 'sanitized'}
                     for loc, patient in patients:
                         links.write(json.dumps({'file': name, 'loc': loc, 'patient': patient}) + '\n')
@@ -152,17 +161,36 @@ def run(inp, out, secret):
               'timing': {'seconds': round(time.monotonic() - start, 4)},
               'resources': {'peak_rss_mb': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024}}
     (out / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    return report
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    for name in ('input', 'output'):
-        parser.add_argument('--' + name, type=Path, required=True)
+def main():
+    parser = argparse.ArgumentParser(
+        description='WardProof: prepare synthetic hospital exports for research, offline.',
+        epilog='Set RAKSHA_SECRET in the environment. Never use real patient data.',
+    )
+    parser.add_argument('--input', type=Path, required=True, help='directory of synthetic records')
+    parser.add_argument('--output', type=Path, required=True, help='new or empty directory outside the input')
+    parser.add_argument('--summary', action='store_true', help='print aggregate release results without file names')
     args = parser.parse_args()
     secret = os.environ.get('RAKSHA_SECRET', '')
     if not secret:
         parser.exit(2, 'Missing release secret.\n')
     try:
-        run(args.input, args.output, secret.encode())
+        report = run(args.input, args.output, secret.encode())
     except (OSError, ValueError):
         parser.exit(1, 'Release failed; discard any partial output.\n')
+    if args.summary:
+        counts = report['counts']
+        total, released, quarantined = (counts[k] for k in ('files_total', 'files_sanitized', 'files_quarantined'))
+        records, linked = (counts[k] for k in ('records_processed', 'records_linked'))
+        print('WardProof | Synthetic data release')
+        print(f'Files:   {released}/{total} released · {quarantined} quarantined')
+        print(f'Records: {linked}/{records} assigned a pseudonym · {records - linked} unlinked')
+        print(f'Runtime: {report["timing"]["seconds"]:.3f} s · {report["resources"]["peak_rss_mb"]:.1f} MiB peak RSS')
+        print('Wrote sanitized/, report.json, records.jsonl. Run the organizer validator separately.')
+        print('Pseudonymized does not mean anonymous.')
+
+
+if __name__ == '__main__':
+    main()

@@ -4,7 +4,7 @@ import io
 import json
 import re
 
-from clinical.text import DRUGS, DX, DURATION, FREQ, STRENGTH, facts
+from clinical.text import DRUGS, DX, DURATION, FREQ, STRENGTH, structured_facts
 from formats.lab_json import require
 from identity.link import parse_date
 
@@ -17,7 +17,7 @@ def decode(data):
 
 ALIASES={}
 for field, names in {
-    'key':'UHID|PatientID|Reg No|Patient ID|hospital_uhid|MRN', 'name':'Name|Patient Name|Naam',
+    'key':'UHID|PatientID|Reg No|Patient ID|hospital_uhid|MRN|Hospital ID|मरीज़ आईडी', 'name':'Name|Patient Name|Naam|Patient Full Name|मरीज़ का नाम',
     'first':'FirstName', 'last':'LastName', 'village':'Village|Village/Mohalla|Gaon|City',
     'phone':'Mobile|Phone|Mobile No|Phone Number', 'dob':'DOB|Janm Tithi|DOB (MM/DD/YYYY)|Birth Date',
     'age':'Age|Umar', 'date':'Reg Date|Registration Date|Registered (MM/DD/YYYY)',
@@ -122,8 +122,8 @@ def outpatient(doc,index):
         for m in v['rx']:
             require(m['drug'] in DRUGS and re.fullmatch(STRENGTH,m['strength']) and re.fullmatch(FREQ,m['frequency']) and re.fullmatch(DURATION,m['duration']))
             rx.append({k:m[k] for k in ('drug','strength','frequency','duration')})
-        result.append({'visit_id':'','patient_ref':p or '', 'visit_date':index.shift(v['visit_date'],p), 'department':'','doctor':'',
-                       'complaints':facts(v.get('complaints','')), 'history':facts(v.get('history','')), 'notes':facts(v.get('notes','')),'vitals':safe,'diagnosis':dx,'rx':rx})
+        result.append({'visit_id':'','patient_ref':p or '', 'visit_date':index.shift(v['visit_date'],p), 'department':v.get('department') if v.get('department') in ('Medicine','Pulmonology','Cardiology','Paediatrics','Surgery','Orthopaedics','Nephrology','Neurology') else '', 'doctor':'',
+                       'complaints':structured_facts(v.get('complaints','')), 'history':structured_facts(v.get('history','')), 'notes':structured_facts(v.get('notes','')),'vitals':safe,'diagnosis':dx,'rx':rx})
     clean={'visits':result}
     if '_export_meta' in doc: clean['_export_meta']=blank_fields(doc['_export_meta'],'system hospital exported_by generated_at source_path')
     return json.dumps(clean,ensure_ascii=False),locs,detected

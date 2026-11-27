@@ -21,15 +21,19 @@ def phonetic(text):
     return ' '.join(re.sub(r'(.)\1+',r'\1',re.sub('[aeiou]', '', w.replace('w','v'))) for w in re.findall('[a-z]+',text)).strip()
 
 
+def decimal_ascii(text):
+    return ''.join(str(unicodedata.decimal(c)) if c.isdecimal() else c for c in text)
+
+
 def uid(raw):
     if not isinstance(raw,str): return ''
-    raw = raw.strip().upper()
+    raw = decimal_ascii(raw.strip().upper())
     return raw if re.fullmatch(r'[A-Z]{2,12}[0-9]{0,4}[-/](?:[0-9]{1,4}[-/])?[0-9]{3,16}',raw) else ''
 
 
 def parse_date(raw, us=False):
     if not isinstance(raw, str): return None
-    raw = ''.join(str(unicodedata.decimal(c)) if c.isdecimal() else c for c in raw.strip())
+    raw = decimal_ascii(raw.strip())
     for fmt in ('%Y-%m-%d','%m/%d/%Y' if us else '%d/%m/%Y','%d-%m-%Y','%d.%m.%Y'):
         try: return datetime.strptime(raw,fmt).date()
         except (ValueError,TypeError): pass
@@ -44,7 +48,7 @@ class Index:
     def add(self, key, name, village='', phone='', dob='', age='', us=False):
         key=uid(key); name=phonetic(name)
         if not key or not name: return
-        mobile=re.sub(r'[^0-9]', '', phone)
+        mobile=re.sub(r'[^0-9]', '', decimal_ascii(phone))
         if len(mobile)==12 and mobile.startswith('91'): mobile=mobile[2:]
         born=parse_date(dob,us)
         strong=(mobile,born.isoformat()) if born and re.fullmatch('[6-9][0-9]{9}', mobile) else None

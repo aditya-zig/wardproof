@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>WardProof · Research release</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+:root{font:16px/1.55 system-ui,sans-serif;color:#172d29;background:#f2f7f5;accent-color:#195d4d}*{box-sizing:border-box}body{margin:0}header{background:#143b33;color:#fff;padding:1rem max(5vw,1rem);display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem}main{max-width:72rem;margin:auto;padding:clamp(1rem,5vw,4rem)}h1{font-family:Georgia,serif;font-size:3rem;font-size:clamp(2.4rem,6vw,4.4rem);font-weight:400;line-height:1.05;margin:0;letter-spacing:-.03em}h2{font-size:1.5rem}h2,h3{line-height:1.2}p{max-width:68ch}.receipt{border-block:1px solid #a1b4a8;padding:.8rem 0;margin:1.6rem 0;font-variant-numeric:tabular-nums}.work{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:2rem}.list,.timeline{min-width:0}.timeline{border-inline-start:1px solid #a1b4a8;padding-inline-start:2rem}label{display:block;font-weight:650}input,button{font:inherit;color:inherit;padding:.45rem .65rem;border:1px solid #467466;border-radius:4px;background:white}input{width:6rem}button{cursor:pointer}button:hover,button[aria-pressed=true]{background:#e0eee5}button:disabled{cursor:default;opacity:.6}button:focus-visible,input:focus-visible{outline:3px solid #195d4d;outline-offset:3px}.primary{color:white;background:#195d4d}.primary:hover:not(:disabled){background:#143b33}ol{list-style:none;padding:0}li{border-bottom:1px solid #c6d4c9;padding:.7rem 0}li button{width:100%;text-align:left;overflow-wrap:anywhere}small{display:block}h3{overflow-wrap:anywhere}footer{margin-top:3rem;border-top:1px solid #a1b4a8}@media(max-width:720px){.work{grid-template-columns:1fr}.timeline{border-inline-start:0;border-top:1px solid #a1b4a8;padding:1rem .75rem 0}}
+</style>
+<body><header><strong>WardProof</strong><span>Offline · Synthetic data only</span></header><main>
+<h1>Research release</h1><p>Find patients by hospital stay length, inspect their linked clinical notes, and take a cohort into your analysis.</p>
+<p class="receipt" id="receipt"></p>
+<div class="work"><section class="list" aria-labelledby="cohort-heading"><h2 id="cohort-heading">Cohort</h2><label for="days">Minimum stay (days)</label><input type="number" id="days" min="0" max="9999" required value="9"> <button class="primary" id="download" type="button">Download cohort CSV</button><p id="status" role="status"></p><ol id="people"></ol></section>
+<section class="timeline" aria-labelledby="timeline-heading"><h2 id="timeline-heading">Patient timeline</h2><div id="details"><p>Select a patient to read their released notes.</p></div></section></div>
+<footer><p>Only linked, released text notes are included. Quarantined files and unlinked records are not evidence of no visits. Dates are shifted; stay lengths are preserved. Pseudonymized does not mean anonymous.</p></footer>
+</main><script type="application/json" id="data">__RELEASE_DATA__</script><script>
+'use strict';
+const data=JSON.parse(document.querySelector('#data').textContent), counts=data.counts;
+const element=id=>document.getElementById(id);
+const add=(parent,tag,text)=>{const node=document.createElement(tag);node.textContent=text;parent.append(node);return node;};
+const days=element('days'), people=element('people'), details=element('details'), download=element('download');
+const patients=Object.entries(data.patients).sort(([a],[b])=>a.localeCompare(b));
+let chosen=null, visible=[];
+element('receipt').textContent=`Release receipt: ${counts.files_sanitized} of ${counts.files_total} files released · ${counts.files_quarantined} quarantined · ${counts.records_processed-counts.records_linked} records without a pseudonym`;
+function timeline(id){
+  chosen=id; details.replaceChildren();
+  for (const button of people.querySelectorAll('button')) button.setAttribute('aria-pressed',String(button.dataset.patient===id));
+  if(!id){add(details,'p','Select a patient to read their released notes.');return;}
+  add(details,'h3',id);
+  const list=add(details,'ol','');
+  for(const event of [...data.patients[id]].sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'))){
+    const row=add(list,'li','');
+    add(row,'strong',event.days===null?'Clinical note':`${event.days}-day stay`);
+    add(row,'small',event.date?`${event.date}${event.end?' to '+event.end:''} · shifted`:'Date not released');
+    for(const fact of event.facts) add(row,'div',fact);
+  }
+}
+function render(){
+  visible=days.validity.valid?patients.map(([id,events])=>[id,events.filter(event=>event.days!==null&&event.days>=Number(days.value))]).filter(([,events])=>events.length):[];
+  const stays=visible.reduce((n,[,events])=>n+events.length,0);
+  element('status').textContent=days.validity.valid?`${visible.length} ${visible.length===1?'patient':'patients'} · ${stays} qualifying ${stays===1?'stay':'stays'}`:'Enter a whole number from 0 to 9999.';
+  people.replaceChildren();download.disabled=!visible.length;
+  for(const [id,events] of visible){const b=add(add(people,'li',''),'button',id);b.type='button';b.dataset.patient=id;add(b,'small',`${events.length} qualifying ${events.length===1?'stay':'stays'}`);b.addEventListener('click',()=>timeline(id));}
+  timeline(visible.some(([id])=>id===chosen)?chosen:null);
+}
+days.addEventListener('input',render);
+download.addEventListener('click',()=>{
+  const rows=visible.flatMap(([id,events])=>events.map(e=>[id,e.date,e.end,e.days].join(',')));
+  const url=URL.createObjectURL(new Blob([['patient,shifted_admission,shifted_discharge,stay_days',...rows].join('\r\n')+'\r\n'],{type:'text/csv'}));
+  const link=document.createElement('a');link.href=url;link.download='wardproof-cohort.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});render();
+</script></body></html>

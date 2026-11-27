@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 from pathlib import Path
@@ -54,6 +56,26 @@ class LabRelease(unittest.TestCase):
                 self.assertIsNone(lab[0]['patient'])
                 self.assertIn('Haemoglobin,<10.10,g/dL,12–16', payload['sanitized/results.csv'])
 
+    def test_lab_column_order_and_delimiter_do_not_change_projection(self):
+        fields = 'sample_id patient_name age_sex uhid ref_doctor test result unit ref_range collected_on reported_on'.split()
+        values = dict(patient_name='नीला नमूना', test='Haemoglobin', result='10.1', unit='g/dL')
+        for ext, sep in [('csv', ','), ('tsv', '\t')]:
+            with self.subTest(ext=ext):
+                files = {}
+                columns = fields[::-1]
+                for name, header in [('results', columns), ('duplicate', columns[:-1] + ['unit']),
+                                     ('extra', columns + ['free_text'])]:
+                    text = sep.join(header) + '\n' + sep.join(values.get(k, '') for k in header) + '\n'
+                    files[f'{name}.{ext}'] = text.encode('utf-16')
+                report, payload = self.run_release(files)
+                self.assertEqual(report['counts']['files_quarantined'], 2)
+                data = csv.DictReader(io.StringIO(payload[f'sanitized/results.{ext}']), delimiter=sep)
+                self.assertEqual(data.fieldnames, columns)
+                row, = data
+                self.assertEqual([row[k] for k in ('test','result','unit','patient_name')],
+                                 ['Haemoglobin','10.1','g/dL',''])
+                self.assertEqual(json.loads(payload['records.jsonl'])['loc'], 'row:0')
+
     def test_json_report_keeps_clinical_panel_without_identity(self):
         original = example()
         report, payload = self.run_release({'9012345678.json': json.dumps(original)})
@@ -91,6 +113,31 @@ class LabRelease(unittest.TestCase):
         self.assertEqual(invalid['counts']['files_quarantined'], 1)
         self.assertFalse(artifacts['records.jsonl'])
 
+    def test_reference_ranges_validate_content_not_filename(self):
+        header = 'test,loinc,unit,reference_range\n'
+        good = header + 'Haemoglobin,718-7,g/dL,12.0-16.0\n'
+        bad = good + 'Haemoglobin,718-7,g/dL,PRIVATE_MARKER\n'
+        report, payload = self.run_release({'reference.csv': good, 'invalid.csv': bad})
+        self.assertEqual(report['counts']['files_sanitized'], 1)
+        self.assertEqual(report['counts']['files_quarantined'], 1)
+        entry, = (row for row in report['files'] if row['status'] == 'sanitized')
+        self.assertEqual(payload[entry['output']], good)
+        self.assertEqual(payload['records.jsonl'], '')
+        self.assertNotIn('PRIVATE_MARKER', str(payload))
+
+    def test_json_legacy_encodings_release_utf8(self):
+        for encoding, name in (('utf-16', 'नीला नमूना'), ('cp1252', 'Céline Example')):
+            with self.subTest(encoding=encoding):
+                doc = example()
+                doc['patient']['name'] = name
+                doc['remarks'] = 'Private referral'
+                raw = json.dumps(doc, ensure_ascii=False).encode(encoding)
+                report, payload = self.run_release({'results.json': raw})
+                entry, = report['files']
+                self.assertEqual(entry['status'], 'sanitized')
+                self.assertNotIn(name, payload[entry['output']])
+                self.assertEqual(json.loads(payload[entry['output']])['panels'], doc['panels'])
+
     def test_quarantine_ambiguous_or_malformed_json_without_partial_release(self):
         valid = json.dumps(example())
         cases = [valid.replace('"remarks":', '"remarks": "hidden", "remarks":'),
@@ -101,6 +148,8 @@ class LabRelease(unittest.TestCase):
         files['valid.json'] = valid
         report, payload = self.run_release(files)
         self.assertEqual(report['counts']['files_quarantined'], len(cases))
+        self.assertEqual({f['reason'] for f in report['files'] if f['status'] == 'quarantined'},
+                         {'invalid_or_unrecognized_content'})
         self.assertEqual(report['counts']['files_sanitized'], 1)
         self.assertEqual(sum(p.startswith('sanitized/') for p in payload), 1)
         self.assertEqual(len(payload['records.jsonl'].splitlines()), 1)

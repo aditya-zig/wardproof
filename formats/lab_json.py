@@ -1,4 +1,6 @@
 """Narrow release policy for structured diagnostic panels. No free text passes through."""
+import csv
+import io
 import json
 import re
 
@@ -42,8 +44,35 @@ def reject_constant(_):
 
 
 def parse(data):
-    return json.loads(data.decode('utf-8-sig'), parse_float=decimal_value,
+    if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+        text = data.decode('utf-16')
+    else:
+        try:
+            text = data.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = data.decode('cp1252')
+    return json.loads(text, parse_float=decimal_value,
                       parse_constant=reject_constant, object_pairs_hook=unique_object)
+
+
+def reference_ranges(text):
+    header = ['test', 'loinc', 'unit', 'reference_range']
+    rows = csv.reader(io.StringIO(text), strict=True)
+    require(next(rows, None) == header)
+    target = io.StringIO(newline='')
+    writer = csv.writer(target)
+    writer.writerow(header)
+    count = 0
+    number = r'-?[0-9]{1,6}(?:\.[0-9]{1,4})?'
+    for row in rows:
+        require(len(row) == 4)
+        test, code, unit, interval = row
+        require(test.isascii() and (test.lower(), code, unit) in ASSAYS)
+        require(re.fullmatch(f'{number} *[-–] *{number}', interval))
+        writer.writerow(row)
+        count += 1
+    require(count)
+    return target.getvalue(), [], 0
 
 
 def measurement(result):

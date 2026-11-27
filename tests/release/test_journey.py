@@ -28,6 +28,21 @@ def release(files, secret='fixture-key'):
 
 
 class Journey(unittest.TestCase):
+    def test_cli_summary_counts_quarantine_without_printing_input_details(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inp, out = Path(tmp)/'in', Path(tmp)/'out'
+            inp.mkdir()
+            (inp/'PRIVATE_FIXTURE.pdf').write_text('PRIVATE_CONTENT')
+            result = subprocess.run(
+                [sys.executable, '-B', str(ROOT/'main.py'), '--input', str(inp), '--output', str(out), '--summary'],
+                env={**os.environ, 'RAKSHA_SECRET': 'fixture-key'}, text=True, capture_output=True, check=True,
+            )
+            self.assertIn('0/1 released · 1 quarantined', result.stdout)
+            self.assertIn('0/0 assigned a pseudonym · 0 unlinked', result.stdout)
+            self.assertNotIn('PRIVATE_', result.stdout)
+            self.assertNotIn('fixture-key', result.stdout)
+            self.assertEqual(result.stderr, '')
+
     def test_link_across_scripts_not_namesakes_and_keep_time_and_dose(self):
         files = {'registration/demo.tsv': 'Name\tUHID\tMobile\tVillage\tAge\nMeera Shah\tDEMO-1001\t9123456780\tRampur\t44\nMeera Shah\tDEMO-1002\t9123456790\tGopalpur\t54\n'.encode('utf-16'),
                  'prescriptions/मीरा.txt': 'OPD Prescription\nनाम: मीरा शाह   आयु: 44 वर्ष\nग्राम: रामपुर\nRx\n1. Tab Ramipril 5 mg 1-0-0 x 9 days\nC/O fever\nC/O FakeRelative\n',
@@ -111,6 +126,27 @@ class Journey(unittest.TestCase):
         self.assertEqual((end-start).days,9)
         for key in ('bill_no','patient_name','pmjay_id','payer_pan','policy_no','amount_inr'):
             self.assertEqual(row[key],'')
+
+    def test_outpatient_preserves_recognized_history_without_releasing_free_text(self):
+        visit = {'patient_ref': 'SYNTH-1', 'visit_date': '2032-03-02',
+                 'department': 'Nephrology', 'vitals': {}, 'diagnosis': [], 'rx': [],
+                 'complaints': 'C/O cough with expectoration x 4 weeks',
+                 'history': 'No H/O DM/HTN', 'notes': 'Allergy: Amoxicillin 500 mg PRIVATE_MARKER'}
+        _, _, outputs = release({'opd/export.json': json.dumps({'visits': [visit]})})
+        released = json.loads(next(iter(outputs.values())))['visits'][0]
+        for key in ('department', 'complaints', 'history'):
+            self.assertEqual(released[key], visit[key])
+        self.assertEqual(released['notes'], '')
+
+    def test_outpatient_keeps_multilingual_complaints_without_arbitrary_suffixes(self):
+        complaints = ['४ दिन से पेट दर्द', 'chakkar aana 3 din se',
+                      'C/O breathlessness on exertion x 2 weeks', 'kamzori 3 hafte se PRIVATE_MARKER']
+        visit = {'patient_ref': 'SYNTH-1', 'visit_date': '2032-03-02',
+                 'vitals': {}, 'diagnosis': [], 'rx': []}
+        _, _, outputs = release({'opd/export.json': json.dumps({'visits': [
+            dict(visit, complaints=complaint) for complaint in complaints]})})
+        visits = json.loads(next(iter(outputs.values())))['visits']
+        self.assertEqual([row['complaints'] for row in visits], [*complaints[:3], ''])
 
     def test_context_is_not_released_as_a_positive_finding(self):
         _, _, outputs = release({'notes/example.txt': 'NURSING NOTES\nNo C/O fever\nFamily history: Parkinson\'s disease\nAllergy: Amoxicillin 500 mg\nBP 115/82\nTab Ramipril 5 mg 1-0-0\n'})
