@@ -1,31 +1,71 @@
-# WardProof · Secret Wards (Track 3)
+# WardProof · DevForge Secret Wards (Track 3)
 
-**Goal:** share the clinical history, not the identity. From synthetic Indian hospital exports, create cleaned records, a safe processing receipt and stable pseudonyms. Demo target: two visits under different scripts, a namesake who must stay separate, and an unchanged medicine/dose. Synthetic competition data only. Not safe for real patient data.
+**Share the clinical history, not the identity.** WardProof projects synthetic Indian hospital exports onto allowlisted clinical fields, links corroborated records with keyed pseudonyms, and quarantines unsupported files. Standard-library Python 3.11+ on Linux; no network, GPU, LLM, dependency install, or model download. **Synthetic competition data only. Do not use this with real patient records.**
 
-**Inspiration:** [RedwoodAI](https://github.com/diyadesai1/RedwoodAI) separates private-identifier detection from a useful downstream document workflow. No RedwoodAI code, models or infrastructure are included. WardProof is standard-library Python, no network or model downloads. [Organizer contract and practice data](https://github.com/Reinforce-SST/Secret-Wards-ToolKit).
+[Project brief (PDF)](docs/brief.pdf) · [Organizer kit and practice data](https://github.com/Reinforce-SST/Secret-Wards-ToolKit)
 
-## Run the first slice
+## Run locally
 
-Linux, Python 3.11+. In a fresh checkout, clone the official team kit outside this repo; set `KIT` to its directory. Example using the sibling reference clone in this workspace:
+Clone the official kit **outside** this repo. Set `KIT` to its path, and run from WardProof:
 
 ```sh
-KIT=../references/secret-wards-kit
+KIT=../secret-wards-kit
 OUT=$(mktemp -d)
-RAKSHA_SECRET=practice python3 -B main.py --input "$KIT/dev/input" --output "$OUT"
+RAKSHA_SECRET=practice python3 -B main.py --input "$KIT/dev/input" --output "$OUT" --summary
 python3 "$KIT/validate_output.py" --input "$KIT/dev/input" --output "$OUT"
 python3 "$KIT/check_dev.py" --output "$OUT"
+python3 -B -m unittest discover -s tests/release -v
+python3 "$KIT/check_submission.py" --repo . --run
 ```
 
-Use an empty output directory. `practice` is only for the public synthetic fixture; no secret is embedded in the output. Quarantined means *reported by input digest and not exported*, not copied to an output quarantine folder. Scope: a single strict UTF-8 laboratory CSV schema. Only selected lab names, numeric results, units and ranges are kept. Local hospital IDs are pseudonymized within a source file, not yet linked across sources. Ambiguous or unsupported IDs abstain. Input paths are conservatively tokenized instead of assuming any filename is safe; selective path preservation is unfinished. Coverage and utility are currently too low for submission.
+`--summary` prints file coverage, quarantine, linkage and runtime without input names or values. The organizer command remains quiet without it. For the live demo, run the summary first, then show the validator's `CONTRACT OK` and the practice checker's results separately.
 
-## Actual practice baseline
+`practice` is a public fixture key. For other synthetic exports, inject your own high-entropy `RAKSHA_SECRET` from a secret store. Use a new empty output directory, separate from the input; discard the output if the process exits nonzero.
 
-Kit commit `6c0a85a`. On 200 files: **4 released, 196 quarantined**, 275 rows processed. Official format validator: `CONTRACT OK`. Practice self-check: 48/3230 personal-data probes still visible, 0/4 planted canaries, 389/825 checked medical values kept, linkage precision 1.00 / recall 0.07, zero raw copies. These are *the practice tool's denominators*, not 47% retention across the entire original dump, not zero leaks, and not the official hidden score. Other formats, multilingual matching, residual-risk controls and date shifting remain unimplemented.
+## Researcher demo (offline)
 
-## Three proposed GitHub issues / agent handoffs
+[Two-page project brief](docs/brief.pdf) · [18-second demo recording](docs/demo/wardproof.mp4) · [Self-contained demo HTML](docs/demo/wardproof.html) (download and open locally). The demo uses synthetic records.
 
-One branch and one PR per owner. Confirm the test boundaries before writing new tests. For each slice: specify observable behavior, see test fail, implement, rerun. Each owner writes tests under their own directory. No real records, raw strings in logs, or runtime reads of practice truth. No agent should edit another owner's files.
+```sh
+DEMO=$(mktemp -d)
+python3 -B tools/scenario.py "$DEMO/trial"
+python3 -B tools/research_demo.py --release "$DEMO/trial/release" --output "$DEMO/viewer.html"
+```
 
-1. **A · Clinical text and structured sanitization** — `feat/clinical`; owns `clinical/`, `tests/clinical/`. Public boundary: given a record field plus context, return cleaned text + aggregate detection counts, never raw matches in logs. Start with synthetic `C/O fever` vs a relative name, a Hindi name and `Ramipril 5 mg`. Success: preserve medical bytes while removing identifiers; evaluate English, Hindi and Hinglish separately.
-2. **B · Patient linkage and dates** — `feat/linkage`; owns `identity/`, `tests/identity/`. Boundary: take normalized evidence, source namespace and secret; return pseudonym or abstention plus a stable date offset. Success: corroborated records match across files/scripts; namesakes do not; a 9-day stay remains 9 days; secret rotation changes the output. No plaintext identity lookup tables on disk.
-3. **C · File handling, release and independent evaluation** — `feat/release`; owns `main.py`, `raksha.toml`, `formats/`, `tests/release/`, README and final PDF. Owns integration of A/B, not their implementations. First add a second supported format without regressing malformed-file quarantine. Preserve safe paths, sanitize headers/metadata, check fresh synthetic cases and official checks. Demo only counts measured from actual exports. Track percentage of *input* records actually released alongside checker scores. Integrate at first working slice, not only at freeze.
+Open `viewer.html` locally in a browser. Filter for nine-day stays, select a patient, and download the cohort CSV. This viewer only reads linked text notes from the sanitized release; it does not need the input or `RAKSHA_SECRET`, and does not include every record type. The HTML and CSV contain release data: treat both as sensitive. The scenario is a small team-authored changed-format regression, not an independent held-out benchmark or the hidden evaluation.
+
+For the official practice run above, `python3 -B tools/loss_breakdown.py --kit "$KIT" --release "$OUT"` breaks down missing and quarantined clinical probes. `python3 -B tools/stay_tradeoff.py "$OUT"` compares exact stay lengths with three-day bands on linked FHIR encounters, without changing the release. Its uniqueness counts are not attacker success rates. `python3 -B tools/research_check.py --kit "$KIT" --release "$OUT"` audits quarantine categories and compares FHIR stays, diagnosis counts, and numeric CSV lab medians before and after release.
+
+For a blind benchmark, ask a teammate who has not tuned the pipeline to prepare a separate synthetic input tree and expected answers. Freeze both before running; keep novel headers, encodings, namesakes, and clinical totals in the expected answers. Score the first run before sharing the fixtures with whoever tunes the pipeline. The bundled scenario is not this benchmark.
+
+## Pipeline and trust boundary
+
+```text
+CSV / TSV / JSON / FHIR / notes → recognize supported schemas
+     ├─ registry evidence in RAM → corroborate or abstain → HMAC pseudonym
+     └─ project allowlisted clinical values, shift dates, rewrite IDs and paths
+            → sanitized/ + records.jsonl + report.json
+Unsupported / malformed → digest and quarantine status only; no exported copy
+```
+
+- **Structured data:** Recognized registration CSV/TSV/JSON, lab CSV/TSV/JSON (lab result columns may be reordered; unknown or duplicate columns are rejected), billing CSV, OPD JSON, and FHIR R4 single-patient discharge summaries (SNOMED CT 373942005) with at most one encounter. Other document types and multi-encounter bundles are quarantined rather than mislabeled or paired with the wrong stay. FHIR references are regenerated, selected reference target types are checked, and attachments, narrative and source metadata are removed. It is not a generic FHIR validator.
+- **Clinical text:** Positive projection of recognized medicines, doses, observations and diagnoses, not an unfiltered note with names blotted out. `C/O fever` survives; `C/O FakeRelative` does not. Selected Hindi discharge diagnoses and dates, and lab values in forwarded text panels, are supported. Forwarded panels without corroborated identity remain unlinked. Lines with recognized negation, family history, allergy and stop markers are withheld rather than turned into positive findings. Unrecognized context can still be lost. Supported FHIR condition verification codes are preserved. Clinician names and unrecognized clinical spans are not retained.
+- **Linkage and privacy:** Explicit Devanagari transliteration plus phonetic matching. Cross-facility linkage requires phone, DOB and compatible name; a text reference without an ID can match a unique full name and village. Ambiguous candidates abstain. Keyed date offsets preserve intervals within a patient. Age and location are dropped, not generalized. Unknown names and paths are not emitted. Rare diagnoses and exact stay lengths can still be identifying.
+- **Storage:** No raw intermediates, identity indexes, secrets, or quarantine copies on disk. Input is read-only from WardProof's perspective. New directories and files are private by default; no raw strings are logged. Store raw inputs and released data on an encrypted volume and keep its credentials outside this repo. The app does not encrypt the input volume itself. Treat output as sensitive, not anonymous.
+
+## Measured on the official synthetic practice set
+
+Kit `6c0a85a`: **182/200 files released**, 18 quarantined, 773 ledger records, 694 with a pseudonym. Organizer validator: `CONTRACT OK`. Same-key runs reproduced the release and ledger; key rotation changed the pseudonyms. A local practice run took about **0.15 s** and **23 MiB peak RSS** on this machine.
+
+- Practice checker: **3,920/4,777 medical values retained (82.1%)**, up from **3,593/4,761 (75.5%)** on the same kit. The checker does not count all medical values in quarantined files, so report file coverage separately.
+- Linkage precision **1.00**, recall **0.80**, F0.5 **0.95**; 0 wrong merges measured. This is not evidence that matching never merges distinct people.
+- **0/3,230** personal-data flags, **0/4 canaries**, zero unchanged copies of unsupported files. These figures are not a privacy guarantee or hidden score.
+- Risk diagnostic: **50/51 evaluated patients** had at least one unique `(shifted ISO week, diagnosis code)` pair in released OPD/FHIR records. Age and location do not enter the pair because WardProof removes them. For FHIR stays, **16/19 evaluated patients** had a unique `(calendar-day stay length, diagnosis code)` pair. Both are uniqueness proxies, not the contest's attack. Shifting dates does not hide the length of a stay.
+- Independently authored regression fixtures cover Hindi-to-Latin matching, namesakes, a 9-day interval, dose preservation, alternate headers and date formats, FHIR references and attachment suppression, and malformed/unsupported-file quarantine. Not evaluated on a hidden dataset.
+
+### Problem-statement gaps
+
+- Noncanonical JSON decimals (such as `10.10`) and exponent notation are quarantined to avoid silently changing precision or scale. The organizer's checker accepts the output, but the written spec also asks for original paths and schemas where safe. WardProof preserves recognized neutral path components and nesting; it pseudonymizes other components in place. It rebuilds the supported FHIR subset rather than preserving arbitrary input structure. Recognized registration JSON keys remain in place; sensitive numeric fields use `null` rather than made-up values. Billing CSV preserves allowlisted clinical procedures and shifted dates, not payer details or amounts.
+- The system keeps recognized clinical values, not every clinical detail. It drops clinician names rather than distinguishing them from all relatives, and abstains on weak identity evidence. An encrypted volume must be configured separately. The practice checks do not reproduce the official hidden attack.
+
+[RedwoodAI](https://github.com/diyadesai1/RedwoodAI) inspired the privacy-first document workflow; no code, models, or services from it are used.

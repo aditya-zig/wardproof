@@ -1,0 +1,18 @@
+# Review manifest only. Runtime rules are enforced in Python, not loaded from this file.
+version: 1
+mode: synthetic_only
+runtime:
+  network: disabled_by_deployment
+  secret_env: RAKSHA_SECRET
+  raw_inputs: read_only
+  raw_intermediates: none
+  encrypted_volumes: required_for_sensitive_storage
+release:
+  strategy: allowlisted_clinical_projection
+  unsupported_files: report_sha256_only
+  fhir_attachments: omit
+  age_and_location: omit
+  dates: keyed_patient_offset
+  ambiguous_identity: abstain
+  raw_values_in_logs: prohibited
+  output_sensitivity: treat_as_sensitive
